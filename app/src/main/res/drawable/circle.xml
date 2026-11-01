@@ -1,0 +1,9 @@
+<!-- The round Play/Pause button: the accent, with a ripple that shows on it in both themes. -->
+<ripple xmlns:android="http://schemas.android.com/apk/res/android"
+    android:color="@color/ripple">
+    <item>
+        <shape android:shape="oval">
+            <solid android:color="@color/accent" />
+        </shape>
+    </item>
+</ripple>

@@ -1,0 +1,6 @@
+<!-- Behind a cover or icon; with clipToOutline it also rounds the image's corners. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="@color/divider" />
+    <corners android:radius="8dp" />
+</shape>

@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A container or track as a tile: a square cover (sized in code to the column), two lines of title at full width,
+     then the detail line with ⋯ at its end. Fixed line counts keep the tiles in a row the same height. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:background="@drawable/panel"
+    android:orientation="vertical"
+    android:padding="10dp">
+
+    <ImageView
+        android:id="@+id/art"
+        android:layout_width="match_parent"
+        android:layout_height="120dp"
+        android:background="@drawable/tile"
+        android:clipToOutline="true"
+        android:importantForAccessibility="no"
+        android:scaleType="centerCrop" />
+
+    <TextView
+        android:id="@+id/name"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:ellipsize="end"
+        android:fontFamily="sans-serif-medium"
+        android:lines="2"
+        android:textColor="@color/text"
+        android:textSize="15sp" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <TextView
+            android:id="@+id/meta"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:ellipsize="end"
+            android:lines="1"
+            android:textColor="@color/text2"
+            android:textSize="13sp" />
+
+        <!-- Not focusable, so a tap anywhere else still selects the tile. -->
+        <ImageView
+            android:id="@+id/more"
+            android:layout_width="32dp"
+            android:layout_height="24dp"
+            android:layout_marginEnd="-6dp"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/more"
+            android:focusable="false"
+            android:src="@drawable/ic_more" />
+    </LinearLayout>
+</LinearLayout>

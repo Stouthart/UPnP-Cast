@@ -1,0 +1,211 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Now Playing: the player's views at full size, plus progress, transport and play mode. The cover is sized in code. -->
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/scroll"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fillViewport="true"
+    android:fitsSystemWindows="true">
+
+    <LinearLayout
+        android:id="@+id/player"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_horizontal"
+        android:orientation="vertical"
+        android:paddingHorizontal="24dp"
+        android:paddingBottom="24dp"
+        android:paddingTop="8dp">
+
+        <!-- Closes the sheet, as in the Sonos app; a swipe down does the same. -->
+        <ImageView
+            android:id="@+id/close"
+            android:layout_width="56dp"
+            android:layout_height="40dp"
+            android:layout_marginBottom="8dp"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/close"
+            android:scaleType="center"
+            android:src="@drawable/ic_down" />
+
+        <ImageView
+            android:id="@+id/player_art"
+            android:layout_width="320dp"
+            android:layout_height="320dp"
+            android:background="@drawable/cover"
+            android:clipToOutline="true"
+            android:importantForAccessibility="no"
+            android:scaleType="centerCrop" />
+
+        <!-- Text and volume are inset 16dp: the SeekBars' own padding, so everything lines up with their tracks. -->
+        <TextView
+            android:id="@+id/player_title"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="24dp"
+            android:paddingHorizontal="16dp"
+            android:ellipsize="end"
+            android:fontFamily="sans-serif-medium"
+            android:maxLines="2"
+            android:textColor="@color/text"
+            android:textSize="24sp" />
+
+        <TextView
+            android:id="@+id/player_meta"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:paddingHorizontal="16dp"
+            android:ellipsize="end"
+            android:maxLines="2"
+            android:textColor="@color/text2"
+            android:textSize="16sp" />
+
+        <TextView
+            android:id="@+id/player_format"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:paddingHorizontal="16dp"
+            android:textColor="@color/text2"
+            android:textSize="14sp" />
+
+        <SeekBar
+            android:id="@+id/player_progress"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:progressBackgroundTint="@color/text2"
+            android:progressTint="@color/accent"
+            android:thumbTint="@color/accent" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:paddingHorizontal="16dp">
+
+            <TextView
+                android:id="@+id/player_elapsed"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:textColor="@color/text2"
+                android:textSize="14sp" />
+
+            <TextView
+                android:id="@+id/player_remaining"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textColor="@color/text2"
+                android:textSize="14sp" />
+        </LinearLayout>
+
+        <!-- Shuffle, Previous, Play/Pause, Next, Repeat, spread over the width as in the Sonos app. -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <ImageView
+                android:id="@+id/player_shuffle"
+                style="@style/Transport"
+                android:contentDescription="@string/shuffle"
+                android:src="@drawable/ic_shuffle"
+                android:tint="@color/text2" />
+
+            <ImageView
+                android:id="@+id/player_previous"
+                style="@style/Transport"
+                android:contentDescription="@string/previous"
+                android:src="@drawable/ic_previous" />
+
+            <!-- 1.5 shares: a fifth of a phone's row is narrower than the 72dp circle, which then got its sides cut. -->
+            <FrameLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1.5">
+
+                <ImageView
+                    android:id="@+id/player_toggle"
+                    android:layout_width="72dp"
+                    android:layout_height="72dp"
+                    android:layout_gravity="center"
+                    android:background="@drawable/circle"
+                    android:clickable="true"
+                    android:contentDescription="@string/play"
+                    android:focusable="true"
+                    android:padding="20dp"
+                    android:src="@drawable/ic_play" />
+            </FrameLayout>
+
+            <ImageView
+                android:id="@+id/player_next"
+                style="@style/Transport"
+                android:contentDescription="@string/next"
+                android:src="@drawable/ic_next" />
+
+            <ImageView
+                android:id="@+id/player_repeat"
+                style="@style/Transport"
+                android:contentDescription="@string/repeat"
+                android:src="@drawable/ic_repeat"
+                android:tint="@color/text2" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingHorizontal="16dp">
+
+            <!-- -8dp: the icon itself, not its touch target, starts on the line. -->
+            <ImageView
+                android:id="@+id/player_mute"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:layout_marginStart="-8dp"
+                android:background="?android:attr/selectableItemBackgroundBorderless"
+                android:contentDescription="@string/mute"
+                android:padding="8dp"
+                android:src="@drawable/ic_volume" />
+
+            <SeekBar
+                android:id="@+id/player_volume"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:contentDescription="@string/volume"
+                android:max="100"
+                android:progressBackgroundTint="@color/text2"
+                android:progressTint="@color/accent"
+                android:thumbTint="@color/accent" />
+
+            <TextView
+                android:id="@+id/player_level"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:gravity="end"
+                android:minWidth="32dp"
+                android:textColor="@color/text2"
+                android:textSize="15sp" />
+        </LinearLayout>
+
+        <!-- Pushes the Queue button to the bottom when everything above fits; its height is the room to spare. -->
+        <View
+            android:id="@+id/spacer"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1" />
+
+        <TextView
+            android:id="@+id/player_queue"
+            style="@style/Button"
+            android:layout_marginTop="24dp"
+            android:text="@string/queue" />
+    </LinearLayout>
+</ScrollView>

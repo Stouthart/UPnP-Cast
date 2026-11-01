@@ -1,0 +1,13 @@
+# Build output and caches; named .nosync so iCloud Drive skips them too.
+build.nosync/
+.gradle.nosync/
+.kotlin.nosync/
+# The default names, in case a tool ignores the settings above.
+build/
+.gradle/
+.kotlin/
+local.properties
+# Finder's folder settings, in any folder.
+.DS_Store
+# Third-party reference material (APKs, strings): local only.
+/reference.nosync/

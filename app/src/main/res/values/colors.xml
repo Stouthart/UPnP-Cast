@@ -1,0 +1,18 @@
+<resources>
+    <!-- Stouthart's palette, from the company logo (light); values-night has the dark one. The same two files serve
+         LDAC Lock. The logo's ramp: #154056/#5797C2, #2B495B/#7EABCE, #3E5361/#A6C2DA, #4F5E67/#CFDFE9.
+         Every text colour is at least 4.5:1 on what it sits on. Surfaces and the accent are blue; text is neutral,
+         so the accent stands out from it (a navy text made the accent unreadable as a highlight). -->
+    <color name="bg">#FFF4F8FB</color>
+    <color name="card">#FFE4EDF3</color>
+    <color name="panel">#FFCFDFE9</color> <!-- Logo. Rows and panels: solid, as a tint failed contrast in dark. -->
+    <color name="divider">#1F154056</color>
+    <color name="text">#FF1A1F23</color>
+    <color name="text2">#FF555D63</color>
+    <color name="accent">#FF154056</color> <!-- Logo. -->
+    <color name="on_accent">#FFFFFFFF</color>
+    <color name="ripple">#33FFFFFF</color> <!-- On accent buttons. -->
+    <color name="warning">#FFA63522</color>
+    <color name="success">#FF256B55</color>
+    <color name="icon_bg">#FF154056</color> <!-- Logo. The launcher icon's, in both themes. -->
+</resources>

@@ -1,0 +1,71 @@
+<resources>
+    <!-- Wording follows the Sonos app (strings-sonos-en_US.tsv), then UAPP's (strings-uapp-en.tsv). -->
+    <string name="app_name">UPnP Cast</string>
+
+    <string name="rooms">Rooms</string>
+    <string name="servers">UPnP/DLNA servers</string>
+    <string name="searching">Searching for nearby products, make sure they\'re powered on…</string>
+    <string name="no_rooms">We can\'t find a Sonos system on your mobile device\'s network. Make sure your system is powered on and connected to the same network.</string>
+    <string name="no_servers">No UPnP/DLNA servers found</string>
+    <plurals name="room_count">
+        <item quantity="one">%1$d room</item>
+        <item quantity="other">%1$d rooms</item>
+    </plurals>
+    <plurals name="server_count">
+        <item quantity="one">%1$d server</item>
+        <item quantity="other">%1$d servers</item>
+    </plurals>
+
+    <string name="loading">Loading…</string>
+    <plurals name="track_count">
+        <item quantity="one">%1$d track</item>
+        <item quantity="other">%1$d tracks</item>
+    </plurals>
+    <plurals name="item_count">
+        <item quantity="one">%1$d item</item>
+        <item quantity="other">%1$d items</item>
+    </plurals>
+    <string name="grid_list">Grid/list</string>
+    <string name="more">More</string>
+    <string name="unsupported_rate">Can\'t play %1$s. It\'s encoded at an unsupported sample rate %2$s Hz.</string>
+    <string name="cant_reach">Couldn\'t connect to %1$s.</string>
+    <string name="no_wifi">No WiFi connection</string>
+    <string name="connect_wifi">Connect to a WiFi network to control your system.</string>
+
+    <string name="play_now">Play now</string>
+    <string name="play_next">Play next</string>
+    <string name="add_end">Add to end of queue</string>
+    <string name="replace_queue">Replace queue</string>
+    <string name="no_content">No content</string>
+    <string name="play">Play</string>
+    <string name="pause">Pause</string>
+    <string name="volume">Volume</string>
+    <string name="mute">Mute</string>
+    <string name="unmute">Unmute</string>
+    <string name="previous">Previous</string>
+    <string name="next">Next</string>
+    <string name="shuffle">Shuffle</string>
+    <string name="repeat">Repeat</string>
+    <string name="queue">Queue</string>
+    <string name="clear_queue">Clear queue</string>
+    <string name="clear_message">Are you sure you want to remove all tracks in the queue? The playback will stop.</string>
+    <string name="clear_all">Clear all</string>
+    <string name="clear_error">Unable to clear queue.</string>
+    <string name="cancel">Cancel</string>
+    <string name="close">Close</string>
+    <string name="cant_play">Couldn\'t play %1$s.</string>
+    <string name="cant_play_reach">Couldn\'t play %1$s. Couldn\'t connect to %2$s.</string>
+
+    <string name="settings">Settings</string>
+    <string name="appearance">Appearance</string>
+    <string name="system_default">System default</string>
+    <string name="light_mode">Light mode</string>
+    <string name="dark_mode">Dark mode</string>
+    <string name="polling">Polling interval</string>
+    <string name="seconds">%1$d s</string>
+
+    <string name="lan_needed">UPnP Cast needs permission for local network access. We use this to find and connect to nearby Sonos products and UPnP/DLNA servers.</string>
+    <string name="allow_lan">Allow local network access</string>
+
+    <string name="copyright" translatable="false">UPnP Cast %1$s · Copyright © 2026 Stouthart</string>
+</resources>

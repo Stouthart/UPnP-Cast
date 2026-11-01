@@ -1,0 +1,219 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- LDAC Lock's look with Android's own views and shapes: no library, no extra inflation cost. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fitsSystemWindows="true"
+    android:orientation="vertical">
+
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:fillViewport="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="16dp">
+
+        <!-- Rooms -->
+        <LinearLayout style="@style/Card">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal">
+
+                <View
+                    android:layout_width="4dp"
+                    android:layout_height="match_parent"
+                    android:background="@drawable/bar" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="16dp"
+                    android:orientation="vertical">
+
+                    <TextView
+                        style="@style/Title"
+                        android:text="@string/rooms" />
+
+                    <TextView
+                        android:id="@+id/rooms_summary"
+                        style="@style/Summary" />
+                </LinearLayout>
+            </LinearLayout>
+
+            <!-- Filled with rows by show(); hidden while empty. -->
+            <LinearLayout
+                android:id="@+id/rooms"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:orientation="vertical"
+                android:visibility="gone" />
+
+            <TextView
+                android:id="@+id/allow"
+                style="@style/Button"
+                android:layout_marginTop="20dp"
+                android:text="@string/allow_lan"
+                android:visibility="gone" />
+        </LinearLayout>
+
+        <!-- UPnP/DLNA servers -->
+        <LinearLayout
+            style="@style/Card"
+            android:layout_marginTop="16dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal">
+
+                <View
+                    android:layout_width="4dp"
+                    android:layout_height="match_parent"
+                    android:background="@drawable/bar" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="16dp"
+                    android:orientation="vertical">
+
+                    <TextView
+                        style="@style/Title"
+                        android:text="@string/servers" />
+
+                    <TextView
+                        android:id="@+id/servers_summary"
+                        style="@style/Summary" />
+                </LinearLayout>
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/servers"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:orientation="vertical"
+                android:visibility="gone" />
+        </LinearLayout>
+
+        <!-- Settings -->
+        <LinearLayout
+            style="@style/Card"
+            android:layout_marginTop="16dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal">
+
+                <View
+                    android:layout_width="4dp"
+                    android:layout_height="match_parent"
+                    android:background="@drawable/bar" />
+
+                <TextView
+                    style="@style/Title"
+                    android:layout_marginStart="16dp"
+                    android:text="@string/settings" />
+            </LinearLayout>
+
+            <TextView
+                style="@style/Label"
+                android:layout_marginTop="20dp"
+                android:text="@string/appearance" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:id="@+id/appearance_system"
+                    style="@style/Segment"
+                    android:text="@string/system_default" />
+
+                <TextView
+                    android:id="@+id/appearance_light"
+                    style="@style/Segment"
+                    android:layout_marginHorizontal="8dp"
+                    android:text="@string/light_mode" />
+
+                <TextView
+                    android:id="@+id/appearance_dark"
+                    style="@style/Segment"
+                    android:text="@string/dark_mode" />
+            </LinearLayout>
+
+            <TextView
+                style="@style/Label"
+                android:layout_marginTop="20dp"
+                android:text="@string/polling" />
+
+            <!-- The mini player's volume row exactly: a 40dp icon slot, the slider, the value centred in 48dp.
+                 -4dp: this card has 20dp padding, the mini player 16dp, so slider and value line up with it. -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginHorizontal="-4dp"
+                android:layout_marginTop="10dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <ImageView
+                    android:layout_width="40dp"
+                    android:layout_height="40dp"
+                    android:layout_marginStart="-8dp"
+                    android:importantForAccessibility="no"
+                    android:padding="8dp"
+                    android:src="@drawable/ic_timer" />
+
+                <!-- 0..9 for 1..10 seconds: SeekBar's minimum is 0 in this layout. -->
+                <SeekBar
+                    android:id="@+id/poll"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:contentDescription="@string/polling"
+                    android:max="9"
+                    android:progressBackgroundTint="@color/text2"
+                    android:progressTint="@color/accent"
+                    android:thumbTint="@color/accent" />
+
+                <TextView
+                    android:id="@+id/poll_value"
+                    android:layout_width="48dp"
+                    android:layout_height="wrap_content"
+                    android:gravity="center"
+                    android:textColor="@color/text2"
+                    android:textSize="15sp" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <!-- Pushes the copyright to the bottom when the cards don't fill the screen. -->
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1" />
+
+        <TextView
+            android:id="@+id/copyright"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:gravity="center_horizontal"
+            android:textColor="@color/text2"
+            android:textSize="15sp" />
+    </LinearLayout>
+    </ScrollView>
+
+    <include layout="@layout/player" />
+</LinearLayout>

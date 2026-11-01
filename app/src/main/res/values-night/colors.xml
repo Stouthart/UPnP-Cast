@@ -1,0 +1,14 @@
+<resources>
+    <!-- Stouthart's palette (dark): navy surfaces, the logo's light blue as the accent. -->
+    <color name="bg">#FF0B1F2B</color>
+    <color name="card">#FF10303F</color>
+    <color name="panel">#FF154056</color> <!-- Logo. -->
+    <color name="divider">#1FFFFFFF</color>
+    <color name="text">#FFF2F7FA</color>
+    <color name="text2">#FFB4C0C8</color>
+    <color name="accent">#FF7EABCE</color> <!-- Logo. -->
+    <color name="on_accent">#FF0B1F2B</color>
+    <color name="ripple">#330B1F2B</color>
+    <color name="warning">#FFF28B74</color>
+    <color name="success">#FF6CC3A5</color>
+</resources>
