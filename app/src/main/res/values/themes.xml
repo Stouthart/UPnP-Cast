@@ -9,6 +9,9 @@
         <item name="android:textColorSecondary">@color/text2</item>
         <item name="android:windowLightStatusBar">@bool/light_bars</item>
         <item name="android:windowLightNavigationBar">@bool/light_bars</item>
+        <!-- Android 14 only: from 15 the screens run behind the bars, and Android ignores these. -->
+        <item name="android:statusBarColor">@color/bg</item>
+        <item name="android:navigationBarColor">@color/bg</item>
     </style>
 
     <style name="Card">
@@ -40,13 +43,15 @@
         <item name="android:textSize">20sp</item>
     </style>
 
-    <!-- A transport button on Now Playing: one fifth of the row, the icon centred in a 48dp touch target. -->
+    <!-- A transport button on Now Playing: a share of the row, a 56dp touch target, the 24dp icon scaled up to 36dp
+         (Previous, Next), or 28dp with the layout's 14dp padding (Shuffle, Repeat). The 72dp Play circle sets the row. -->
     <style name="Transport">
         <item name="android:layout_width">0dp</item>
-        <item name="android:layout_height">48dp</item>
+        <item name="android:layout_height">56dp</item>
         <item name="android:layout_weight">1</item>
         <item name="android:background">?android:attr/selectableItemBackgroundBorderless</item>
-        <item name="android:scaleType">center</item>
+        <item name="android:padding">10dp</item>
+        <item name="android:scaleType">fitCenter</item>
     </style>
 
     <!-- One of the three Appearance choices, a third of the row each. -->

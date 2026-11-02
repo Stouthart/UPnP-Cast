@@ -10,10 +10,10 @@ android {
 
     defaultConfig {
         applicationId = "nl.stouthart.upnpcast"
-        minSdk = 36 // RedMagic Astra (Android 16).
+        minSdk = 34 // Android 14; tested on 16 (RedMagic Astra) and 17 (S25 Edge).
         targetSdk = 37
-        versionCode = 2 // Keeps counting up: the phones carried the internal 0.1 builds as 1.
-        versionName = "1.0"
+        versionCode = 3 // Keeps counting up: the phones carried the internal 0.1 builds as 1.
+        versionName = "1.1"
     }
 
     buildTypes {

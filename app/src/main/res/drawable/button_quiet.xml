@@ -1,0 +1,11 @@
+<!-- A secondary button, as Queue on Now Playing: the panel tone of an unchosen Appearance, calmer than the accent.
+     The theme's own highlight ripples, as the white one of the accent buttons wouldn't show on the light panel. -->
+<ripple xmlns:android="http://schemas.android.com/apk/res/android"
+    android:color="?android:attr/colorControlHighlight">
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="@color/panel" />
+            <corners android:radius="16dp" />
+        </shape>
+    </item>
+</ripple>

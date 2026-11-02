@@ -25,10 +25,12 @@
         <item quantity="one">%1$d item</item>
         <item quantity="other">%1$d items</item>
     </plurals>
+    <string name="home">Home</string>
     <string name="grid_list">Grid/list</string>
     <string name="more">More</string>
     <string name="unsupported_rate">Can\'t play %1$s. It\'s encoded at an unsupported sample rate %2$s Hz.</string>
     <string name="cant_reach">Couldn\'t connect to %1$s.</string>
+    <string name="not_supported">Not supported on this source</string>
     <string name="no_wifi">No WiFi connection</string>
     <string name="connect_wifi">Connect to a WiFi network to control your system.</string>
 
@@ -37,6 +39,8 @@
     <string name="add_end">Add to end of queue</string>
     <string name="replace_queue">Replace queue</string>
     <string name="no_content">No content</string>
+    <string name="tv">TV</string>
+    <string name="spotify" translatable="false">Spotify</string>
     <string name="play">Play</string>
     <string name="pause">Pause</string>
     <string name="volume">Volume</string>

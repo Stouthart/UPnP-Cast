@@ -3,15 +3,17 @@
 
     <!-- Any socket needs INTERNET; the app only talks to devices on the local network. -->
     <uses-permission android:name="android.permission.INTERNET" />
-    <!-- Android 17: a runtime permission for apps targeting it; unknown to Android 16, which ignores it. -->
+    <!-- Android 17: a runtime permission for apps targeting it; unknown to Android 14 to 16, which ignore it. -->
     <uses-permission android:name="android.permission.ACCESS_LOCAL_NETWORK" />
     <!-- To follow WiFi coming and going; granted at install, no prompt. -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
     <!-- configChanges: rotating or resizing keeps each screen as it is (no new search, no reload, the same place in
-         a list); the layouts adapt by themselves, and the tile columns and the Now Playing cover follow in code. -->
+         a list); the layouts adapt by themselves, and the tile columns and the Now Playing cover follow in code.
+         enableOnBackInvokedCallback: Android 16 calls Browse's Back (up a level) by default; 14 and 15 only with it. -->
     <application
         android:dataExtractionRules="@xml/backup_rules"
+        android:enableOnBackInvokedCallback="true"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:supportsRtl="true"

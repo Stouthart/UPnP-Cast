@@ -12,13 +12,18 @@ enum class How { NOW, NEXT, END, REPLACE }
 enum class Repeat { OFF, ALL, ONE }
 
 /** What the room is playing, from its TrackMetaData; [art] may be relative to the speaker. */
-class Track(val title: String, val artist: String, val album: String, val art: String, val format: String)
+/** The playing track; [uri] is its own, which the speaker can find a streaming service's cover for. */
+class Track(val title: String, val artist: String, val album: String, val art: String, val format: String, val uri: String)
 
 /**
  * The room's track as raw TrackMetaData (parse it with [Sonos.track] only when it changed), its queue position,
  * and the times in seconds (0 when the source has none, as a stream).
  */
-class Position(val meta: String?, val index: Int, val elapsed: Int, val duration: Int)
+/**
+ * Where the room is; [uri] is the track's own, empty while nothing is loaded. It names the sources without metadata:
+ * x-sonos-htastream:… for the TV input, and x-sonos-vli:<player>:2,spotify:<session> for Spotify Connect while paused.
+ */
+class Position(val meta: String?, val index: Int, val elapsed: Int, val duration: Int, val uri: String)
 
 /** Sonos's play mode, split into its two switches. */
 class Mode(val shuffle: Boolean, val repeat: Repeat) {
@@ -110,8 +115,9 @@ object Sonos {
     }
 
     fun position(r: Room): Position {
-        val (index, meta, duration, elapsed) = Upnp.args(avt(r, "GetPositionInfo"), "Track", "TrackMetaData", "TrackDuration", "RelTime")
-        return Position(meta, index?.toIntOrNull() ?: 0, seconds(elapsed), seconds(duration))
+        val (index, meta, duration, elapsed, uri) =
+            Upnp.args(avt(r, "GetPositionInfo"), "Track", "TrackMetaData", "TrackDuration", "RelTime", "TrackURI")
+        return Position(meta, index?.toIntOrNull() ?: 0, seconds(elapsed), seconds(duration), uri ?: "")
     }
 
     fun track(didl: String?): Track? {
@@ -123,8 +129,10 @@ object Sonos {
         var art = ""
         var stream = ""
         var info = ""
+        var uri = ""
         var hz = 0
         var bits = 0
+        var quality = ""
         while (p.next() != END_DOCUMENT) {
             if (p.eventType != START_TAG) continue
             when (p.name) {
@@ -137,18 +145,20 @@ object Sonos {
                     info = p.getAttributeValue(null, "protocolInfo") ?: ""
                     hz = p.getAttributeValue(null, "sampleFrequency")?.toIntOrNull() ?: hz
                     bits = p.getAttributeValue(null, "bitsPerSample")?.toIntOrNull() ?: bits
+                    uri = p.nextText().trim()
                 }
-                // Sonos's own, as for Spotify: "bd:16,sr:44100,c:0,l:1,d:0".
+                // Sonos's own, as for Spotify: "bd:16,sr:44100,c:0,l:1,d:0"; l is lossless. Files have none.
                 "streamInfo" -> for (kv in p.nextText().split(',')) {
                     val v = kv.substringAfter(':').toIntOrNull() ?: continue
                     if (kv.startsWith("sr:") && hz == 0) hz = v
                     if (kv.startsWith("bd:") && bits == 0) bits = v
+                    if (kv.startsWith("l:")) quality = if (v == 1) "Lossless" else "Lossy"
                 }
             }
         }
-        val format = Res("", info, hz, bits, "").format()
-        if (stream.isNotEmpty()) return Track(stream, title, album, art, format)
-        return if (title.isEmpty()) null else Track(title, artist, album, art, format)
+        val format = Res("", info, hz, bits, "").format(quality)
+        if (stream.isNotEmpty()) return Track(stream, title, album, art, format, uri)
+        return if (title.isEmpty()) null else Track(title, artist, album, art, format, uri)
     }
 
     /**

@@ -58,4 +58,14 @@
         android:src="@drawable/ic_check"
         android:tint="@color/accent"
         android:visibility="gone" />
+
+    <!-- A server opens: the same chevron as a folder in Browse. -->
+    <ImageView
+        android:id="@+id/chevron"
+        android:layout_width="24dp"
+        android:layout_height="24dp"
+        android:layout_marginStart="8dp"
+        android:importantForAccessibility="no"
+        android:src="@drawable/ic_chevron"
+        android:visibility="gone" />
 </LinearLayout>

@@ -61,7 +61,7 @@ class MainActivity : Activity() {
     private var found: List<Room> = emptyList()
     private var room: Room? = null // The selected room: the remembered one if it's still there, else the first.
 
-    @SuppressLint("InlinedApi") // ACCESS_LOCAL_NETWORK is Android 17's; on 16, lanAllowed() is true and it's never used.
+    @SuppressLint("InlinedApi") // ACCESS_LOCAL_NETWORK is Android 17's; before, lanAllowed() is true and it's never used.
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
         setContentView(R.layout.activity_main)
@@ -72,6 +72,7 @@ class MainActivity : Activity() {
         servers = findViewById(R.id.servers)
         player = Player(this)
         player.onNetwork = { search() } // Another network may hold other rooms and servers; none, and the screen says so.
+        player.onShown = { copyright.shown = !it } // The player takes the foot of the screen.
         copyright = findViewById(R.id.copyright)
         copyright.text = getString(R.string.copyright, BuildConfig.VERSION_NAME)
         allow.setOnClickListener {
@@ -153,7 +154,7 @@ class MainActivity : Activity() {
 
     override fun onRequestPermissionsResult(code: Int, permissions: Array<String>, results: IntArray) = search()
 
-    /** Android 16 doesn't know the permission, and doesn't need it. */
+    /** Android 16 and older don't know the permission, and don't need it. */
     private fun lanAllowed() = Build.VERSION.SDK_INT < 37 || checkSelfPermission(ACCESS_LOCAL_NETWORK) == PERMISSION_GRANTED
 
     /** The remembered addresses first, for an instant list; SSDP alongside finds the rest and any that moved. */
@@ -169,8 +170,7 @@ class MainActivity : Activity() {
             serversSummary.text = ""
             return
         }
-        if (Lan.wifi == null) {
-            select(null)
+        if (Lan.wifi == null) { // The player hides by itself without WiFi.
             roomsSummary.setText(R.string.connect_wifi)
             serversSummary.text = ""
             return
@@ -265,7 +265,8 @@ class MainActivity : Activity() {
         Log.i(TAG, "${r.size} rooms in $ms ms")
         found = r
         val id = prefs.getString(KEY_ROOM, null)
-        select(r.firstOrNull { it.id == id } ?: r.firstOrNull())
+        room = r.firstOrNull { it.id == id } ?: r.firstOrNull()
+        player.room = room
         rooms.removeAllViews()
         for (x in r) rooms.addView(row(rooms, x.name, x.host.substringBefore(':')).apply {
             setOnClickListener {
@@ -280,13 +281,6 @@ class MainActivity : Activity() {
         roomsSummary.text = resources.getQuantityString(R.plurals.room_count, r.size, r.size)
     }
 
-    /** The room tracks play in, shown by the mini player; none hides it. */
-    private fun select(r: Room?) {
-        room = r
-        player.room = r
-        copyright.shown = r == null // The player takes the foot of the screen.
-    }
-
     private fun checks() {
         for (i in found.indices) rooms.getChildAt(i).findViewById<View>(R.id.check).shown = found[i] === room
     }
@@ -295,6 +289,7 @@ class MainActivity : Activity() {
         Log.i(TAG, "${s.name} in $ms ms")
         player.hosts += s.host // Its covers may show in the player.
         servers.addView(row(servers, s.name, s.host, bmp).apply {
+            findViewById<View>(R.id.chevron).shown = true
             setOnClickListener {
                 val i = Intent(this@MainActivity, BrowseActivity::class.java)
                     .putExtra(BrowseActivity.CONTROL, s.control)
@@ -317,7 +312,8 @@ class MainActivity : Activity() {
     private fun searched(ms: Long) {
         Log.i(TAG, "Search done in $ms ms")
         if (rooms.childCount == 0) {
-            select(null) // Not the last network's room, as after switching to one without Sonos.
+            room = null // No Sonos here: nothing for the player to control, so it hides.
+            player.room = null
             roomsSummary.setText(R.string.no_rooms)
         }
         if (servers.childCount == 0) serversSummary.setText(R.string.no_servers)

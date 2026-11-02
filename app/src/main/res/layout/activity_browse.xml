@@ -42,6 +42,16 @@
                     style="@style/Summary" />
             </LinearLayout>
 
+            <!-- Back to the opening screen from any level; left of the toggle, which keeps its place. -->
+            <ImageView
+                android:id="@+id/home"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:background="?android:attr/selectableItemBackgroundBorderless"
+                android:contentDescription="@string/home"
+                android:padding="8dp"
+                android:src="@drawable/ic_home" />
+
             <!-- Where the Queue card has Clear queue: switches between the list and tiles. -->
             <ImageView
                 android:id="@+id/view_type"

@@ -157,6 +157,7 @@ class BrowseActivity : Activity() {
         viewType = findViewById(R.id.view_type)
         art = Art((48 * resources.displayMetrics.density).toInt()) { url -> loaded(art, url) }
         layout(prefs.getBoolean(KEY_TILES, false))
+        findViewById<View>(R.id.home).setOnClickListener { finish() } // The opening screen is right below.
         viewType.setOnClickListener {
             layout(!tiles)
             prefs.edit().putBoolean(KEY_TILES, tiles).apply()

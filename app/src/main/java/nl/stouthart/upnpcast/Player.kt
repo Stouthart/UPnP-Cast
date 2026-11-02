@@ -15,12 +15,15 @@ import android.widget.SeekBar
 import android.widget.TextView
 import android.widget.Toast
 import java.net.URL
+import java.net.URLEncoder
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.TimeUnit
 
 private const val QUIET_MS = 1500L // After a change, polls leave that control alone until it has landed.
+private const val SLACK_MS = 250L // A position reply's trip, on top of the speaker rounding down to whole seconds.
+private const val SETTLE_MS = 4000L // How long a seek may take to land, while the speaker still reports 0 or the old place.
 private const val HOSTS = "hosts"
 
 /**
@@ -42,11 +45,17 @@ class Player(private val a: Activity) {
         }
 
         fun hosts(i: Intent): Array<String> = i.getStringArrayExtra(HOSTS) ?: emptyArray()
+
+        // Once the room has had anything loaded (a track, playing or paused, or a source such as the TV), the mini
+        // player shows on every screen and stays, for the rest of the session.
+        @Volatile
+        private var seen = false
     }
 
-    /** One poll's answer; volume -1 and the nulls mean "not asked this time". */
+    /** One poll's answer, [at] the uptime the position arrived; volume -1 and the nulls mean "not asked this time". */
     private class Answer(
-        val state: String, val pos: Position, val track: Track?, val volume: Int, val muted: Boolean?, val mode: Mode?, val queued: Boolean?,
+        val state: String, val pos: Position, val at: Long, val track: Track?, val volume: Int, val muted: Boolean?, val mode: Mode?,
+        val queued: Boolean?,
     )
 
     /** Where covers may come from besides the speaker itself: the servers this app knows. */
@@ -57,9 +66,12 @@ class Player(private val a: Activity) {
         set(v) {
             field = v
             gen++
-            view.visibility = if (v == null) View.GONE else View.VISIBLE
+            place()
             refresh()
         }
+
+    /** Runs when the mini player shows or hides. */
+    var onShown: ((Boolean) -> Unit)? = null
 
     /** Each answer, on the main thread, with whether the room plays its queue (only known when [media] is set). */
     var onPosition: ((Position, Boolean) -> Unit)? = null
@@ -85,6 +97,8 @@ class Player(private val a: Activity) {
 
     private val lan: () -> Unit = {
         covers.retry()
+        if (full && Lan.wifi == null) a.finish() // Now Playing has nothing to show without WiFi.
+        place()
         refresh()
         onNetwork?.invoke()
     }
@@ -180,6 +194,10 @@ class Player(private val a: Activity) {
                 seeking = false
                 quiet = SystemClock.uptimeMillis() + QUIET_MS
                 val to = s.progress
+                base = to * 1000L // The clock goes along at once; answers that don't fit it can't pull it back meanwhile.
+                at = SystemClock.uptimeMillis()
+                settle = at + SETTLE_MS
+                retick()
                 command { Sonos.seek(it, to) }
             }
         })
@@ -188,9 +206,10 @@ class Player(private val a: Activity) {
     /** Asks the room at the Polling interval from the main screen: 2 s by default, up to 10 s. Watches WiFi meanwhile. */
     fun start() {
         Lan.start(a, lan)
+        if (full && Lan.wifi == null) a.finish() // As when WiFi went while the app was away.
+        place()
         val s = Prefs.poll(a).toLong()
         exec = Executors.newSingleThreadScheduledExecutor().apply { scheduleWithFixedDelay(::poll, 0, s, TimeUnit.SECONDS) }
-        if (full) ui.postDelayed(tick, 1000)
     }
 
     fun stop() {
@@ -201,20 +220,30 @@ class Player(private val a: Activity) {
         ui.removeCallbacks(tick)
     }
 
-    // Between polls, the progress counts on by itself while the room plays: smooth at a 10 s interval, and no network.
+    // Between polls the progress counts on by itself, on a clock of its own while the room plays: each second shows for a
+    // second, at any interval and with no network. A poll corrects the clock only where it disagrees with the speaker.
     private val ui = Handler(Looper.getMainLooper())
-    private var base = 0 // The elapsed time of the last answer, its moment, and the track's length.
+    private var base = 0L // The position in ms at [at] (uptime), whether it counts on, and the track's length in s.
     private var at = 0L
+    private var running = false
     private var length = 0
+    private var settle = 0L // Until then (uptime), a seek is landing.
     private val tick = object : Runnable {
         override fun run() {
-            if (!seeking && playing == true && length > 0) {
-                val e = minOf(length, base + ((SystemClock.uptimeMillis() - at) / 1000).toInt())
+            val ms = if (running) base + (SystemClock.uptimeMillis() - at) else base
+            if (!seeking) {
+                val e = minOf(length.toLong(), ms / 1000).toInt()
                 progress?.progress = e
                 times(e, length)
             }
-            ui.postDelayed(this, 1000)
+            if (running && length > 0) ui.postDelayed(this, 1000 - ms % 1000) // Right when the next second starts.
         }
+    }
+
+    /** The clock changed: shows it now, then at each second it reaches. */
+    private fun retick() {
+        ui.removeCallbacks(tick)
+        tick.run()
     }
 
     fun destroy() = covers.stop()
@@ -240,9 +269,11 @@ class Player(private val a: Activity) {
         later {
             try {
                 work(r)
-            } catch (_: Exception) {
+            } catch (e: Exception) {
+                // 701: the speaker answered that the source has no such action, as Pause on the TV input.
+                val text = if (e is HttpException && e.upnp == 701) a.getString(R.string.not_supported) else a.unreachable(r.name)
                 // The app's context: a message that lands after the screen closed doesn't keep the screen alive.
-                a.runOnUiThread { Toast.makeText(a.applicationContext, a.unreachable(r.name), Toast.LENGTH_LONG).show() }
+                a.runOnUiThread { Toast.makeText(a.applicationContext, text, Toast.LENGTH_LONG).show() }
             }
             fresh = true
             poll()
@@ -276,12 +307,13 @@ class Player(private val a: Activity) {
         val answer = if (Lan.wifi == null) null else runCatching {
             val state = Sonos.state(r)
             val p = Sonos.position(r)
+            val got = SystemClock.uptimeMillis() // Before the calls below, which would make the position look older.
             if (p.meta != lastMeta) {
                 lastTrack = Sonos.track(p.meta)
                 lastMeta = p.meta
             }
             Answer(
-                state, p, lastTrack,
+                state, p, got, lastTrack,
                 if (all) Sonos.volume(r) else -1, if (all) Sonos.muted(r) else null,
                 if (all && full) Sonos.mode(r) else null, if (all && media) Sonos.queued(r) else null,
             )
@@ -312,16 +344,39 @@ class Player(private val a: Activity) {
         remaining?.text = if (d > 0) "-" + clock(d - e) else ""
     }
 
+    /**
+     * The mini player shows from the first time the room has anything loaded, and stays, whatever plays or not. It
+     * hides only with nothing to control: without WiFi, or without a Sonos room. Now Playing closes instead.
+     */
+    private fun place() {
+        if (full) return
+        val on = seen && room != null && Lan.wifi != null
+        val now = if (on) View.VISIBLE else View.GONE
+        if (view.visibility == now) return
+        view.visibility = now
+        onShown?.invoke(on)
+    }
+
     private fun show(r: Room, answer: Answer?) {
         val t = answer?.track
+        val plays = answer != null && (answer.state == "PLAYING" || answer.state == "TRANSITIONING")
+        if (answer != null && (plays || answer.pos.uri.isNotEmpty())) seen = true
+        place()
         if (answer != null) {
-            show(answer.state == "PLAYING" || answer.state == "TRANSITIONING")
+            show(plays)
             answer.muted?.let { muted(it) }
             answer.queued?.let { queued = it }
         }
-        val name = if (answer == null) a.unreachable(r.name) else t?.title ?: a.getString(R.string.no_content)
+        val name = when {
+            answer == null -> a.unreachable(r.name)
+            t != null -> t.title
+            // Sources without metadata, known by their URI: the TV input, and Spotify Connect while paused.
+            answer.pos.uri.startsWith("x-sonos-htastream:") -> a.getString(R.string.tv)
+            answer.pos.uri.startsWith("x-sonos-vli:") && ",spotify:" in answer.pos.uri -> a.getString(R.string.spotify)
+            else -> a.getString(R.string.no_content)
+        }
         val detail = listOf(r.name, t?.artist ?: "", if (full) t?.album ?: "" else "").filter { it.isNotEmpty() }.joinToString(" · ")
-        val cover = t?.art?.let { cover(r, it) }
+        val cover = t?.let { cover(r, it.art, it.uri) }
         val now = "$name\n$detail\n$cover\n${t?.format}"
         if (now != shown) {
             shown = now
@@ -340,15 +395,37 @@ class Player(private val a: Activity) {
 
         progress?.let {
             val p = answer.pos
-            base = p.elapsed
-            at = SystemClock.uptimeMillis()
-            length = p.duration
-            if (!seeking && calm) {
-                it.isEnabled = p.duration > 0
-                it.max = maxOf(p.duration, 1)
-                it.progress = p.elapsed
-                times(p.elapsed, p.duration)
+            if (seeking) return@let
+            val reported = p.elapsed * 1000L
+            val ms = if (running) base + (answer.at - at) else base // The clock, when the position arrived.
+            // The speaker rounds down: anywhere in the reported second, plus the reply's trip, the clock is right.
+            val top = reported + 1000 + SLACK_MS
+            val near = p.duration == length && ms >= reported - 1500 && ms <= top + 1500
+            if (!near && answer.at < settle) return@let // A seek landing: 0, the old place, or no length for a moment.
+            if (near) settle = 0
+            if (answer.state == "TRANSITIONING") { // Buffering: the clock waits where it is, whatever the speaker says.
+                if (running) {
+                    base = ms
+                    at = answer.at
+                    running = false
+                    retick()
+                }
+                return@let
             }
+            it.isEnabled = p.duration > 0
+            it.max = maxOf(p.duration, 1)
+            val play = answer.state == "PLAYING"
+            val to = when {
+                play != running || !near -> reported + 500 // Another track, a seek, play or pause: that second's middle.
+                ms < reported -> reported // Behind: just catches up.
+                ms > top -> reported + 999 // Ahead: just falls back into that second.
+                else -> return@let
+            }
+            base = to
+            at = answer.at
+            running = play
+            length = p.duration
+            retick()
         }
         val m = answer.mode
         if (m != null && (mode?.upnp != m.upnp)) {
@@ -362,11 +439,15 @@ class Player(private val a: Activity) {
         onPosition?.invoke(answer.pos, queued)
     }
 
-    /** The cover's URL when it is on the speaker (often relative, as /getaa?…) or on a known server; else none. */
-    fun cover(r: Room, ref: String): String? {
+    /**
+     * The cover's URL when it is on the speaker (often relative, as /getaa?…) or on a known server. One on the internet,
+     * as Spotify's, comes from the speaker too: it fetches the cover of the track's [uri] itself, so the phone never
+     * leaves the local network. Else none.
+     */
+    fun cover(r: Room, ref: String, uri: String = ""): String? {
         if (ref.isEmpty()) return null
         val u = runCatching { URL(URL("http://${r.host}/"), ref) }.getOrNull() ?: return null
-        val ok = u.protocol == "http" && (u.host == r.host.substringBefore(':') || u.host in hosts)
-        return if (ok) u.toString() else null
+        if (u.protocol == "http" && (u.host == r.host.substringBefore(':') || u.host in hosts)) return u.toString()
+        return if (uri.isEmpty()) null else "http://${r.host}/getaa?s=1&u=${URLEncoder.encode(uri, Charsets.UTF_8)}"
     }
 }

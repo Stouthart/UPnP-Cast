@@ -14,8 +14,8 @@ const val MAX_HZ = 48000
 
 /** A track's audio as the server offers it; 0 where the server doesn't say. */
 class Res(val url: String, val protocolInfo: String, val hz: Int, val bits: Int, val duration: String) {
-    /** "FLAC 44.1 kHz 16 bit", as far as the server tells. */
-    fun format(): String {
+    /** "FLAC 44.1 kHz 16 bit", as far as the server tells; a stream's [quality] ("Lossless") follows the codec. */
+    fun format(quality: String = ""): String {
         val mime = protocolInfo.split(':').getOrNull(2)?.substringAfter('/')?.removePrefix("x-")?.lowercase() ?: ""
         val codec = when (mime) {
             "mpeg", "mp3" -> "MP3"
@@ -30,7 +30,7 @@ class Res(val url: String, val protocolInfo: String, val hz: Int, val bits: Int,
             hz > 0 -> "%.1f kHz".format(Locale.ROOT, hz / 1000.0)
             else -> ""
         }
-        return listOf(codec, rate, if (bits > 0) "$bits bit" else "").filter { it.isNotEmpty() }.joinToString(" ")
+        return listOf(codec, quality, rate, if (bits > 0) "$bits bit" else "").filter { it.isNotEmpty() }.joinToString(" ")
     }
 
     /** "5:40" or "1:02:03" from UPnP's "H:MM:SS.fff". */

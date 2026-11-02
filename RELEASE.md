@@ -1,8 +1,18 @@
-<!-- 1.0 - Copyright (C) 2026 Stouthart. All rights reserved. -->
+<!-- 1.1 - Copyright (C) 2026 Stouthart. All rights reserved. -->
 
 # Release notes
 
 Highlights per version, newest first.
+
+## 1.1 - November 2026
+
+- **Android 14 and 15** as well, besides 16 and 17; untested on those versions so far.
+- **Home** in Browse goes back to the opening screen from any level, and servers show an arrow, as folders do.
+- **Spotify on the speaker:** Now Playing shows its cover, which the speaker fetches, and whether the stream is lossless.
+- **Sources without track details are named:** TV for the TV input, and Spotify for Spotify Connect while paused. A control the source doesn't offer, such as Pause on the TV, says "Not supported on this source".
+- **Now Playing's progress** counts evenly at any polling interval, and stays put while a seek lands. Previous, Next, Shuffle and Repeat are bigger, and the Queue button is calmer.
+- **The mini player appears with the first thing the room has loaded**, playing or paused, and then stays on every screen. Without WiFi or a Sonos room, it hides and Now Playing closes.
+- **New icon:** a gradient in the logo's blues, with a light-blue note on the cast screen.
 
 ## 1.0 - November 2026
 
