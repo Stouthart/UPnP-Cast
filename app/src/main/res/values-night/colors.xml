@@ -1,14 +1,17 @@
 <resources>
-    <!-- Stouthart's palette (dark): navy surfaces, the logo's light blue as the accent. -->
-    <color name="bg">#FF0B1F2B</color>
-    <color name="card">#FF10303F</color>
-    <color name="panel">#FF154056</color> <!-- Logo. -->
-    <color name="divider">#1FFFFFFF</color>
-    <color name="text">#FFF2F7FA</color>
-    <color name="text2">#FFB4C0C8</color>
-    <color name="accent">#FF7EABCE</color> <!-- Logo. -->
-    <color name="on_accent">#FF0B1F2B</color>
-    <color name="ripple">#330B1F2B</color>
-    <color name="warning">#FFF28B74</color>
-    <color name="success">#FF6CC3A5</color>
+    <!-- The Studio palette (dark), after VS Code's Dark 2026: near-black greys, the button blue for fills with white
+         text (4.8:1), its lighter link blue for accent text and icons, as the button blue reads only 3.6:1 as text. -->
+    <color name="bg">#FF121314</color>
+    <color name="card">#FF191A1B</color>
+    <color name="panel">#FF202122</color>
+    <color name="divider">#FF2A2B2C</color>
+    <color name="text">#FFBFBFBF</color>
+    <color name="text2">#FF8C8C8C</color>
+    <color name="accent">#FF297AA0</color>
+    <color name="accent_text">#FF48A0C7</color>
+    <color name="on_accent">#FFFFFFFF</color>
+    <color name="chosen">#FF1D2F38</color> <!-- 22% accent on a card: accent text 4.7:1. -->
+    <color name="ripple">#33FFFFFF</color>
+    <color name="warning">#FFF48771</color>
+    <color name="success">#FF73C991</color>
 </resources>

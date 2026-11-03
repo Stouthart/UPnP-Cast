@@ -40,6 +40,9 @@ class BrowseActivity : Activity() {
         const val ROOM_ID = "room_id"
         const val ROOM_NAME = "room_name"
         const val ROOM_HOST = "room_host"
+        const val ROOM_MEMBERS = "room_members"
+        const val ROOM_OWN = "room_own"
+        const val ROOM_PLAYERS = "room_players"
     }
 
     private class Level(val id: String, val title: String) {
@@ -63,7 +66,6 @@ class BrowseActivity : Activity() {
     }
 
     private lateinit var server: Server
-    private var room: Room? = null // Where tracks play; null when no Sonos was found.
     private val sonos = Executors.newSingleThreadExecutor() // One command at a time: queue edits mustn't interleave.
     private lateinit var title: TextView
     private lateinit var summary: TextView
@@ -100,7 +102,8 @@ class BrowseActivity : Activity() {
             val h = v.tag as Holder
             val e = level.items[i]
             h.name.text = e.title
-            h.meta.text = e.meta
+            // A tile is too narrow for a track's artist and format as well: its length alone; a row has the room.
+            h.meta.text = if (tiles && !e.container) e.res?.time().orEmpty() else e.meta
             // A list row hides an empty line, else the title sits off-centre; a tile keeps it, so a row of tiles lines up.
             if (!tiles) h.meta.visibility = if (e.meta.isEmpty()) View.GONE else View.VISIBLE
             h.chevron?.visibility = if (e.container) View.VISIBLE else View.GONE
@@ -161,9 +164,6 @@ class BrowseActivity : Activity() {
             i.getStringExtra(HOST) ?: return finish(),
             i.getStringExtra(CONTROL) ?: return finish(), null, i.getBooleanExtra(LIBRARY, false),
         )
-        val id = i.getStringExtra(ROOM_ID)
-        val host = i.getStringExtra(ROOM_HOST)
-        if (id != null && host != null) room = Room(id, i.getStringExtra(ROOM_NAME) ?: "", host)
         setContentView(R.layout.activity_browse)
         title = findViewById(R.id.title)
         summary = findViewById(R.id.summary)
@@ -188,7 +188,7 @@ class BrowseActivity : Activity() {
         list.setOnItemClickListener { _, _, n, _ -> click(level.items[n]) }
         player = Player(this).apply {
             hosts += server.host
-            room = this@BrowseActivity.room
+            room = Player.room(i) // Where tracks play, following the speakers' grouping; null when no Sonos was found.
             onNetwork = { retry() }
         }
         open(if (server.library) sections() else Level("0", server.name))
@@ -293,12 +293,20 @@ class BrowseActivity : Activity() {
             for (n in ways.indices) menu.add(0, n, n, names[n])
             setOnMenuItemClickListener { m ->
                 if (!e.container) send(listOf(e), ways[m.itemId], 0, e.title)
-                else later(pool) {
-                    val tracks = runCatching { Upnp.tracks(server, e.id, MAX_QUEUE) }.getOrNull()
-                    runOnUiThread {
-                        if (isDestroyed) return@runOnUiThread // Left while the album's tracks loaded.
-                        if (tracks.isNullOrEmpty()) toast(getString(R.string.cant_play, e.title))
-                        else send(tracks, ways[m.itemId], 0, e.title)
+                else {
+                    // The group chosen for, while the album's tracks load: regrouped meanwhile, Replace queue would
+                    // empty another group's queue, so then nothing goes.
+                    val target = player.room
+                    later(pool) {
+                        val tracks = runCatching { Upnp.tracks(server, e.id, MAX_QUEUE) }.getOrNull()
+                        runOnUiThread {
+                            if (isDestroyed) return@runOnUiThread // Left while the album's tracks loaded.
+                            when {
+                                tracks.isNullOrEmpty() -> toast(getString(R.string.cant_play, e.title))
+                                !target.same(player.room) -> toast(getString(R.string.regrouped))
+                                else -> send(tracks, ways[m.itemId], 0, e.title)
+                            }
+                        }
                     }
                 }
                 true
@@ -309,7 +317,7 @@ class BrowseActivity : Activity() {
 
     /** Sends one queue command to the room, off the main thread; only a failure shows. */
     private fun send(tracks: List<Entry>, how: How, start: Int, what: String) {
-        val r = room ?: return toast(getString(R.string.no_rooms))
+        val r = player.room ?: return toast(getString(R.string.no_rooms))
         later(sonos) {
             val t0 = SystemClock.elapsedRealtime()
             try {

@@ -1,0 +1,11 @@
+<!-- An Amp or Port: a low box with its light and connectors. Drawn for UPnP Cast. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="@color/text2"
+        android:fillType="evenOdd"
+        android:pathData="M3,7h18a2,2 0,0 1,2 2v6a2,2 0,0 1,-2 2H3a2,2 0,0 1,-2 -2V9a2,2 0,0 1,2 -2zM4.5,11.4h4v1.2h-4zM17,10.8a1.2,1.2 0,1 0,0 2.4a1.2,1.2 0,1 0,0 -2.4zM13.5,10.8a1.2,1.2 0,1 0,0 2.4a1.2,1.2 0,1 0,0 -2.4z" />
+</vector>

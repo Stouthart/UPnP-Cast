@@ -24,8 +24,7 @@ class QueueActivity : Activity() {
         val meta: TextView = v.findViewById(R.id.meta)
     }
 
-    private lateinit var room: Room
-    private lateinit var player: Player
+    private lateinit var player: Player // Its room is this one's, following the speakers' grouping.
     private lateinit var list: ListView
     private lateinit var summary: TextView
     private lateinit var clear: View
@@ -34,7 +33,10 @@ class QueueActivity : Activity() {
     private val sonos = Executors.newSingleThreadExecutor() // Jump and Clear queue: never waiting behind a long load.
     private var items: List<Entry> = emptyList()
     private var current = -1 // The playing track's row, or -1 while the room plays something else.
-    private var gen = 0 // Drops a load that a newer one, or onStop, has overtaken.
+    private var rows: Room? = null // The group whose queue the rows show, once loaded; null while none is.
+    private var started = false // Between onStart and onStop: a jump or clear that ends later doesn't load again.
+    @Volatile
+    private var gen = 0 // Drops a load that a newer one, or onStop, has overtaken; and stops it at its next page.
 
     private val adapter = object : BaseAdapter() {
         override fun getCount() = items.size
@@ -52,7 +54,7 @@ class QueueActivity : Activity() {
             h.name.text = e.title
             // Bars as well as the colour: in light mode the accent navy is close to the text's near-black.
             val now = i == current
-            h.name.setTextColor(getColor(if (now) R.color.accent else R.color.text))
+            h.name.setTextColor(getColor(if (now) R.color.accent_text else R.color.text))
             h.name.setCompoundDrawablesRelativeWithIntrinsicBounds(if (now) R.drawable.ic_playing else 0, 0, 0, 0)
             h.meta.text = e.meta
             h.meta.visibility = if (e.meta.isEmpty()) View.GONE else View.VISIBLE
@@ -63,7 +65,7 @@ class QueueActivity : Activity() {
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
-        room = Player.room(intent) ?: return finish()
+        val room = Player.room(intent) ?: return finish()
         setContentView(R.layout.activity_queue)
         list = findViewById(R.id.list)
         summary = findViewById(R.id.summary)
@@ -80,15 +82,18 @@ class QueueActivity : Activity() {
             onOpen = { finish() } // Now Playing opened this screen: back to it, rather than a second copy.
             onPosition = { p, queued -> mark(if (queued) p.index - 1 else -1) }
             onNetwork = { if (Lan.wifi != null) load() }
-            this.room = this@QueueActivity.room
+            onRegroup = { load() } // Another coordinator, another queue.
+            this.room = room
         }
         list.adapter = adapter
         list.setOnItemClickListener { _, _, n, _ -> jump(n) }
         clear.setOnClickListener {
+            val shown = rows ?: return@setOnClickListener // The group whose queue the list shows.
             AlertDialog.Builder(this)
                 .setTitle(R.string.clear_queue)
                 .setMessage(R.string.clear_message)
-                .setPositiveButton(R.string.clear_all) { _, _ -> clear() }
+                // Only that group's: the speakers may have been regrouped meanwhile, and the list then reloads.
+                .setPositiveButton(R.string.clear_all) { _, _ -> if (shown.same(player.room)) clear(shown) }
                 .setNegativeButton(R.string.cancel, null)
                 .show()
         }
@@ -96,11 +101,13 @@ class QueueActivity : Activity() {
 
     override fun onStart() {
         super.onStart()
+        started = true
         player.start()
         load()
     }
 
     override fun onStop() {
+        started = false
         gen++
         player.stop()
         art.pause() // load() at the next start asks again.
@@ -128,12 +135,22 @@ class QueueActivity : Activity() {
     }
 
     private fun load() {
+        val room = player.room ?: return
         val g = ++gen
+        // Another group's queue: the old rows go at once, and Clear queue with them, so nothing acts on them; the same
+        // group's stay while it's read again, without a flash of Loading.
+        if (!room.same(rows)) {
+            rows = null
+            items = emptyList()
+            current = -1
+            clear.visibility = View.GONE
+            adapter.notifyDataSetChanged()
+        }
         if (items.isEmpty()) summary.setText(R.string.loading)
         art.retry() // Covers that failed, as without WiFi, get another go when the rows show again.
         later(work) {
             val q = try {
-                Sonos.queue(room) { player.cover(room, it) }
+                Sonos.queue(room, { player.cover(room, it) }) { g == gen }
             } catch (e: Exception) {
                 Log.i(TAG, "Queue of ${room.name}: $e")
                 null
@@ -146,6 +163,7 @@ class QueueActivity : Activity() {
                     return@runOnUiThread
                 }
                 items = q
+                rows = room
                 summary.text = resources.getQuantityString(R.plurals.track_count, q.size, q.size)
                 clear.visibility = if (q.isEmpty()) View.GONE else View.VISIBLE
                 adapter.notifyDataSetChanged()
@@ -154,6 +172,7 @@ class QueueActivity : Activity() {
     }
 
     private fun jump(n: Int) {
+        val room = player.room ?: return
         val e = items[n]
         mark(n) // At once; the player's next answer confirms it.
         later(sonos) {
@@ -162,7 +181,7 @@ class QueueActivity : Activity() {
                 // there is checked to be this one; if it isn't, the list is read again instead (~15 ms).
                 val now = Sonos.queueItem(room, n) { player.cover(room, it) }
                 if (now == null || now.title != e.title || now.artist != e.artist || now.album != e.album) {
-                    runOnUiThread { if (!isDestroyed) load() }
+                    runOnUiThread { if (started) load() }
                     return@later
                 }
                 Sonos.jump(room, n + 1)
@@ -174,7 +193,7 @@ class QueueActivity : Activity() {
         }
     }
 
-    private fun clear() {
+    private fun clear(room: Room) {
         later(sonos) {
             try {
                 Sonos.clear(room)
@@ -182,7 +201,7 @@ class QueueActivity : Activity() {
                 Log.i(TAG, "Clear on ${room.name}: $x")
                 runOnUiThread { toast(getString(R.string.clear_error)) }
             }
-            runOnUiThread { if (!isDestroyed) load() }
+            runOnUiThread { if (started) load() }
             player.refresh()
         }
     }

@@ -1,8 +1,10 @@
 package nl.stouthart.upnpcast
 
 import android.Manifest.permission.ACCESS_LOCAL_NETWORK
+import android.animation.LayoutTransition
 import android.annotation.SuppressLint
 import android.app.Activity
+import android.app.AlertDialog
 import android.content.Intent
 import android.content.pm.PackageManager.PERMISSION_GRANTED
 import android.graphics.Bitmap
@@ -23,6 +25,7 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.SeekBar
 import android.widget.TextView
+import android.widget.Toast
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
@@ -32,8 +35,9 @@ private const val TAG = "UPnPCast"
 private const val SEARCH_MS = 1500L // Devices answer within MX (1 s); the rest is slack for the network.
 private const val KEY_SONOS = "sonos" // A player's description URL: any player knows every room.
 private const val KEY_SERVERS = "servers" // The servers' description URLs.
-private const val KEY_ROOM = "room" // The coordinator id of the room tracks play in.
 private const val MAX_DEVICES = 32 // Per search: a device answering with endless paths can't start endless fetches.
+private const val SETTLE_MS = 350L // Between topology reads after a grouping change, until the speakers report it.
+private const val SETTLE_TRIES = 6
 
 private var View.shown: Boolean
     get() = visibility == View.VISIBLE
@@ -60,8 +64,10 @@ class MainActivity : Activity() {
     private lateinit var player: Player
     private lateinit var copyright: TextView
     private var gen = 0 // Drops results from a search that a newer one, or onStop, has overtaken.
-    private var found: List<Room> = emptyList()
-    private var room: Room? = null // The selected room: the remembered one if it's still there, else the first.
+    private var found: List<Room> = emptyList() // The rows: every room.
+    private var household: Upnp.Topology? = null
+    private var checked: Set<String> = emptySet() // The rooms that play together, by id.
+    private var room: Room? = null // Their group, as the player controls it: one room, or Kitchen + 1.
     private var library: View? = null // The Music library row, kept after the servers whatever order they answer in.
 
     @SuppressLint("InlinedApi") // ACCESS_LOCAL_NETWORK is Android 17's; before, lanAllowed() is true and it's never used.
@@ -76,6 +82,8 @@ class MainActivity : Activity() {
         player = Player(this)
         player.onNetwork = { search() } // Another network may hold other rooms and servers; none, and the screen says so.
         player.onShown = { copyright.shown = !it } // The player takes the foot of the screen.
+        // Grouped elsewhere, as in the Sonos app: the checks follow. A change made here shows once it settled.
+        player.onRegroup = { if (!settling) place(it) }
         copyright = findViewById(R.id.copyright)
         copyright.text = getString(R.string.copyright, BuildConfig.VERSION_NAME)
         allow.setOnClickListener {
@@ -99,41 +107,71 @@ class MainActivity : Activity() {
         }
         open(Prefs.open(this))
         chevron.rotation = if (body.shown) 180f else 0f
+        val card = body.parent as ViewGroup
+        var scroll: LayoutTransition.TransitionListener? = null // An open still to scroll into view.
         header.setOnClickListener {
             val o = !body.shown
             Prefs.open(this, o)
+            scroll?.let { card.layoutTransition.removeTransitionListener(it) }
+            scroll = null
             open(o)
             chevron.animate().rotation(if (o) 180f else 0f).duration = 200
-            // Once laid out, scrolled into view: the card is the last on the screen, so it opens below the fold.
-            if (o) body.addOnLayoutChangeListener(object : View.OnLayoutChangeListener {
-                override fun onLayoutChange(v: View, l: Int, t: Int, r: Int, b: Int, ol: Int, ot: Int, or: Int, ob: Int) {
-                    v.removeOnLayoutChangeListener(this)
-                    v.post { v.requestRectangleOnScreen(Rect(0, 0, v.width, v.height), false) }
-                }
-            })
+            if (o) scroll = into(card) { scroll === it }.also { card.layoutTransition.addTransitionListener(it) }
         }
     }
 
     /**
-     * Appearance (Android recreates the screens in the new mode), the Volume button step (the next press uses it) and
-     * the Polling interval (applies at once).
+     * Scrolls all of [card] into view, with the margin below it, once it has grown: it's the last on the screen, so
+     * it opens below the fold. Not before: while the card and the screen grow, animated, a scroll stops at their
+     * height so far. In view is above the mini player, which sits below the scrolling part. [current]: the open is
+     * still the latest.
      */
-    private fun settings() {
-        val choices = arrayOf<TextView>(findViewById(R.id.appearance_system), findViewById(R.id.appearance_light), findViewById(R.id.appearance_dark))
-        fun mark() {
-            val chosen = Prefs.appearance(this)
+    private fun into(card: ViewGroup, current: (LayoutTransition.TransitionListener) -> Boolean) =
+        object : LayoutTransition.TransitionListener {
+            private var done = false
+
+            override fun startTransition(t: LayoutTransition, c: ViewGroup?, v: View?, type: Int) = Unit
+
+            override fun endTransition(t: LayoutTransition, c: ViewGroup?, v: View?, type: Int) {
+                if (done || type != LayoutTransition.CHANGE_APPEARING || t.isChangingLayout) return
+                done = true
+                card.post { t.removeTransitionListener(this) } // Not while it calls its listeners.
+                if (!current(this)) return
+                val gap = (16 * resources.displayMetrics.density).toInt()
+                card.requestRectangleOnScreen(Rect(0, 0, card.width, card.height + gap), false)
+            }
+        }
+
+    /** A row of [choices], [chosen] filled; a tap on another calls [choose] with its index, then fills it. */
+    private fun segments(choices: Array<TextView>, chosen: Int, choose: (Int) -> Unit) {
+        fun mark(c: Int) {
             for ((i, v) in choices.withIndex()) {
-                v.isSelected = i == chosen // TalkBack says "Selected" on the chosen one.
-                v.setBackgroundResource(if (i == chosen) R.drawable.segment_on else R.drawable.segment)
-                v.setTextColor(getColor(if (i == chosen) R.color.on_accent else R.color.text))
+                v.isSelected = i == c // TalkBack says "Selected" on the chosen one.
+                v.setBackgroundResource(if (i == c) R.drawable.segment_on else R.drawable.segment)
+                v.setTextColor(getColor(if (i == c) R.color.accent_text else R.color.text))
             }
         }
         for ((i, v) in choices.withIndex()) v.setOnClickListener {
-            if (i == Prefs.appearance(this)) return@setOnClickListener
-            Prefs.appearance(this, i)
-            mark() // When the mode stays the same, as System default while the system is in that mode, nothing recreates.
+            if (v.isSelected) return@setOnClickListener
+            choose(i)
+            mark(i)
         }
-        mark()
+        mark(chosen)
+    }
+
+    /**
+     * The Volume button step (the next press uses it), Group rooms (the next tap on a room), the Polling interval
+     * (applies at once) and Appearance (Android recreates the screens in the new mode).
+     */
+    private fun settings() {
+        segments(arrayOf(findViewById(R.id.group_off), findViewById(R.id.group_on)), if (Prefs.group(this)) 1 else 0) {
+            Prefs.group(this, it == 1)
+            if (it == 0) single()
+        }
+        val choices = arrayOf<TextView>(findViewById(R.id.appearance_system), findViewById(R.id.appearance_light), findViewById(R.id.appearance_dark))
+        // When the mode stays the same, as System default while the system is in that mode, nothing recreates: the
+        // choice is filled in place.
+        segments(choices, Prefs.appearance(this)) { Prefs.appearance(this, it) }
         // Sonos's labels at one size: the largest, from 14 sp down to 11, at which the longest fits its third of the row.
         choices[0].addOnLayoutChangeListener { v, l, _, r, _, ol, _, or, _ ->
             if (r - l == or - ol) return@addOnLayoutChangeListener // Only on a new width, as at first and after rotating.
@@ -226,6 +264,7 @@ class MainActivity : Activity() {
     private fun search() {
         val g = ++gen
         rooms.removeAllViews()
+        found = emptyList() // The rows and the rooms they show, in step; the household stays known until it's read again.
         rooms.shown = false
         servers.removeAllViews()
         servers.shown = false
@@ -265,16 +304,16 @@ class MainActivity : Activity() {
             if (haveRooms.get() || seen.size >= MAX_DEVICES || !seen.add(location)) return
             task {
                 val host = Upnp.hostOf(location) ?: return@task
-                val r = try {
-                    Upnp.rooms(host)
+                val t = try {
+                    Upnp.topology(host)
                 } catch (e: Exception) {
                     Log.i(TAG, "No rooms from $host: $e")
                     return@task
                 }
-                if (r.isEmpty() || !haveRooms.compareAndSet(false, true)) return@task
+                if (t.groups.isEmpty() || !haveRooms.compareAndSet(false, true)) return@task
                 prefs.edit().putString(KEY_SONOS, location).apply()
                 val ms = SystemClock.elapsedRealtime() - t0
-                runOnUiThread { if (g == gen) showRooms(r, ms) }
+                runOnUiThread { if (g == gen) showRooms(t, ms) }
                 // The household's music library, the same from any player: listed once it has a share.
                 val lib = try {
                     Upnp.server(location)?.let { Server(it.udn, getString(R.string.music_library), it.host, it.control, it.icon, true) }
@@ -284,9 +323,9 @@ class MainActivity : Activity() {
                 } ?: return@task
                 val shares = runCatching { Upnp.browse(lib, "S:", 0, 20).entries }.getOrNull()
                 if (shares.isNullOrEmpty()) return@task
-                val bmp = lib.icon?.let { runCatching { icon(Http.get(it)) }.getOrNull() }
                 val at = SystemClock.elapsedRealtime() - t0
-                runOnUiThread { if (g == gen) addServer(lib, bmp, at, shares.joinToString(" · ") { it.title }) }
+                // Its own icon, not the player's 48 px picture: sharp at any size, and one request less.
+                runOnUiThread { if (g == gen) addServer(lib, null, at, shares.joinToString(" · ") { it.title }, R.drawable.ic_library) }
             }
         }
 
@@ -329,45 +368,244 @@ class MainActivity : Activity() {
         if (if (keep) set.add(location) else set.remove(location)) prefs.edit().putStringSet(KEY_SERVERS, set).apply()
     }
 
-    private fun row(parent: ViewGroup, name: String, meta: String, bmp: Bitmap? = null): View =
+    /** A room's or server's row: the device's own picture as [bmp], or one of the app's icons as [glyph]. */
+    private fun row(parent: ViewGroup, name: String, meta: String, bmp: Bitmap? = null, glyph: Int = 0): View =
         layoutInflater.inflate(R.layout.row, parent, false).apply {
             findViewById<TextView>(R.id.name).text = name
             findViewById<TextView>(R.id.meta).text = meta
-            if (bmp != null) findViewById<ImageView>(R.id.icon).apply {
-                setImageBitmap(bmp)
+            if (bmp != null || glyph != 0) findViewById<ImageView>(R.id.icon).apply {
+                if (bmp != null) setImageBitmap(bmp) else glyph(this, glyph)
                 shown = true
             }
         }
 
-    private fun showRooms(r: List<Room>, ms: Long) {
-        Log.i(TAG, "${r.size} rooms in $ms ms")
-        found = r
-        val id = prefs.getString(KEY_ROOM, null)
-        room = r.firstOrNull { it.id == id } ?: r.firstOrNull()
-        player.room = room
-        rooms.removeAllViews()
-        for (x in r) rooms.addView(row(rooms, x.name, x.host.substringBefore(':')).apply {
-            setOnClickListener {
-                room = x
-                player.room = x
-                prefs.edit().putString(KEY_ROOM, x.id).apply()
-                checks()
-            }
-        })
-        checks()
-        rooms.shown = true
-        roomsSummary.text = resources.getQuantityString(R.plurals.room_count, r.size, r.size)
+    /** An app icon in a row's 40dp tile: 24dp, centred, as a line icon is drawn. */
+    private fun glyph(v: ImageView, res: Int) {
+        val pad = (8 * resources.displayMetrics.density).toInt()
+        v.setPadding(pad, pad, pad, pad)
+        v.setImageResource(res)
     }
 
+    private fun productIcon(p: Product) = when (p) {
+        Product.SOUNDBAR -> R.drawable.ic_soundbar
+        Product.SUB -> R.drawable.ic_sub
+        Product.PORTABLE -> R.drawable.ic_portable
+        Product.AMP -> R.drawable.ic_amp
+        Product.SPEAKER -> R.drawable.ic_speaker
+    }
+
+    private fun showRooms(t: Upnp.Topology, ms: Long) {
+        Log.i(TAG, "${t.rooms.size} rooms in ${t.groups.size} groups in $ms ms")
+        place(t)
+    }
+
+    /** Every room, the checked ones playing together; a tap groups them or only chooses, as Group rooms says. */
+    private fun place(t: Upnp.Topology) {
+        household = t
+        found = t.rooms
+        rooms.removeAllViews()
+        // Each room by its main player's kind and model, known from the last start; a new room shows a speaker and its
+        // address alone until read. The address is the room's own player's.
+        for (x in t.rooms) rooms.addView(row(rooms, x.name, roomMeta(x, model(x)), glyph = productIcon(product(model(x)))).apply {
+            setOnClickListener { if (Prefs.group(this@MainActivity)) toggle(x) else choose(x) }
+        })
+        pick(t)
+        rooms.shown = true
+        roomsSummary.text = resources.getQuantityString(R.plurals.room_count, t.rooms.size, t.rooms.size)
+        models(t.rooms)
+    }
+
+    /**
+     * The remembered room's group, as the speakers are grouped now, also by the Sonos app: its rooms checked, and the
+     * player on it, one room or all of them as Kitchen + 1.
+     */
+    private fun pick(t: Upnp.Topology) {
+        val group = t.group(Prefs.room(this))
+        checked = t.rooms.filter { t.groupOf[it.id] == group?.id }.mapTo(HashSet()) { it.id }
+        room = group
+        if (!group.same(player.room)) player.room = group // It may have followed the speakers there already.
+        checks()
+    }
+
+    /** With Group rooms off: [x] for the player, with any rooms it plays with; the speakers stay grouped as they are. */
+    private fun choose(x: Room) {
+        val t = household ?: return
+        if (settling || x.id in checked) return
+        Prefs.room(this, x.id)
+        pick(t)
+    }
+
+    private var settling = false // A grouping change is out; taps wait for it.
+
+    /**
+     * With Group rooms on: checks or unchecks [x], as a check box. A room that plays something of its own, as the TV
+     * or Spotify, is asked about first, as joining stops that; a tap on the wrong row shouldn't.
+     */
+    private fun toggle(x: Room) {
+        if (x.id in checked) return regroup(x)
+        if (settling) return
+        settling = true // Also while its group is asked whether it plays.
+        val g = gen
+        later(pool) {
+            val state = runCatching { Sonos.state(x) }.getOrNull() // Its group's, from its coordinator.
+            runOnUiThread {
+                settling = false
+                if (g != gen || isDestroyed) return@runOnUiThread
+                // Not known whether it plays: no join that might stop something unasked.
+                if (state.isNullOrEmpty()) return@runOnUiThread toast(unreachable(x.name))
+                val lead = room
+                if (lead == null || (state != "PLAYING" && state != "TRANSITIONING")) return@runOnUiThread regroup(x)
+                AlertDialog.Builder(this)
+                    .setTitle(getString(R.string.group_title, x.name))
+                    .setMessage(getString(R.string.group_message, x.name, lead.name))
+                    // Only while it still means what it asked: the speakers may have been regrouped meanwhile.
+                    .setPositiveButton(R.string.group) { _, _ -> if (g == gen && lead.same(room) && x.id !in checked) regroup(x) }
+                    .setNegativeButton(R.string.cancel, null)
+                    .show()
+            }
+        }
+    }
+
+    /**
+     * Groups the speakers to match a check or uncheck of [x]: a checked room joins the others and plays what they
+     * play; an unchecked one leaves and goes quiet, and if it led them, it first hands the music to another, which
+     * plays on without a gap. The last checked room stays checked.
+     */
+    private fun regroup(x: Room) {
+        val t = household ?: return
+        val lead = room ?: return
+        val on = x.id in checked
+        if (settling || (on && checked.size == 1)) return
+        val next = if (on) checked - x.id else checked + x.id
+        val leader = if (on && x.id == lead.id) t.rooms.first { it.id in next }.id else lead.id // Afterwards.
+        settling = true
+        checked = next
+        checks() // At once; the speakers' own report confirms it below.
+        Prefs.room(this, leader)
+        val g = gen
+        later(pool) {
+            try {
+                when {
+                    !on -> Sonos.join(x, lead)
+                    x.id == lead.id -> Sonos.handOver(lead.host, leader, t.rooms.first { it.id == leader }.own)
+                    else -> Sonos.leave(x)
+                }
+            } catch (e: InterruptedException) {
+                return@later // The screen closed: nothing to say, nor to wait for.
+            } catch (e: Exception) {
+                Log.i(TAG, "Grouping ${x.name}: $e")
+                runOnUiThread { toast(unreachable(x.name)) }
+            }
+            settle(t, leader, next, g)
+        }
+    }
+
+    /**
+     * Group rooms turned off: the rooms playing with the leading one leave it and go quiet, and it plays on, the only
+     * one checked. A room alone stays as it is.
+     */
+    private fun single() {
+        val t = household ?: return
+        val lead = room ?: return
+        val others = t.rooms.filter { it.id in checked && it.id != lead.id }
+        if (settling || others.isEmpty()) return // A change still out: single() follows once it settled.
+        val next = setOf(lead.id)
+        settling = true
+        checked = next
+        checks()
+        Prefs.room(this, lead.id)
+        val g = gen
+        later(pool) {
+            for (x in others) {
+                try {
+                    Sonos.leave(x)
+                } catch (e: Exception) {
+                    Log.i(TAG, "Grouping ${x.name}: $e")
+                    runOnUiThread { toast(unreachable(x.name)) }
+                }
+            }
+            settle(t, lead.id, next, g)
+        }
+    }
+
+    /**
+     * On the pool, after a grouping change: the speakers report it a moment later, so this reads until [leader]'s
+     * group is [next], then shows what they say.
+     */
+    private fun settle(t: Upnp.Topology, leader: String, next: Set<String>, g: Int) {
+        val at = t.rooms.first { it.id == leader }.own
+        var now: Upnp.Topology? = null
+        for (n in 1..SETTLE_TRIES) {
+            try {
+                Thread.sleep(SETTLE_MS)
+            } catch (e: InterruptedException) {
+                return // The screen closed meanwhile.
+            }
+            val u = runCatching { Upnp.topology(at) }.getOrNull() ?: continue
+            now = u
+            if (u.rooms.filter { u.groupOf[it.id] == u.groupOf[leader] }.mapTo(HashSet()) { it.id } == next) break
+        }
+        runOnUiThread {
+            settling = false
+            if (g != gen) return@runOnUiThread
+            (now ?: household)?.let { place(it) }
+            // Turned off while a change that left rooms together was out. Once only: single()'s own change leaves one,
+            // so a leave that failed isn't tried again and again.
+            if (next.size > 1 && !Prefs.group(this)) single()
+        }
+    }
+
+    // The app's context: a message that lands after the screen closed doesn't keep the screen alive.
+    private fun toast(text: String) = Toast.makeText(applicationContext, text, Toast.LENGTH_LONG).show()
+
+    private fun model(r: Room) = Prefs.model(this, r.id)
+
+    /** A room's second line, as the Sonos app's: its model, such as "Era 300", then its address. */
+    private fun roomMeta(r: Room, model: String): String {
+        val ip = r.own.substringBefore(':')
+        // One kept by an earlier build is the model name whole, as "Sonos Era 300".
+        return if (model.isEmpty()) ip else "${model.removePrefix("Sonos ")} · $ip"
+    }
+
+    /**
+     * Reads the model of each room's main player not known yet (~15 ms each), and redraws its icon. Known ones aren't
+     * asked again: the id is the player's own, and a player doesn't change its model.
+     */
+    private fun models(r: List<Room>) {
+        val g = gen
+        if (r.all { model(it).isNotEmpty() }) return
+        later(pool) {
+            for ((i, x) in r.withIndex()) {
+                if (model(x).isNotEmpty()) continue
+                val m = runCatching { Upnp.model(x.own) }.getOrNull()?.takeIf { it.isNotEmpty() } ?: continue
+                Prefs.model(this, x.id, m)
+                runOnUiThread {
+                    if (g != gen) return@runOnUiThread
+                    val v = rooms.getChildAt(i) ?: return@runOnUiThread
+                    v.findViewById<ImageView>(R.id.icon)?.let { glyph(it, productIcon(product(m))) }
+                    v.findViewById<TextView>(R.id.meta)?.text = roomMeta(x, m)
+                }
+            }
+        }
+    }
+
+    // The checked rooms' marks; "Selected" for TalkBack, as a check box would say.
     private fun checks() {
-        for (i in found.indices) rooms.getChildAt(i).findViewById<View>(R.id.check).shown = found[i] === room
+        for (i in found.indices) {
+            val on = found[i].id in checked
+            rooms.getChildAt(i)?.apply { // None while a search has cleared the rows.
+                findViewById<View>(R.id.check).shown = on
+                isSelected = on
+            }
+        }
     }
 
     /** A server's row, or the Music library's, which says its shares in place of an address and stays last. */
-    private fun addServer(s: Server, bmp: Bitmap?, ms: Long, meta: String = s.host) {
+    private fun addServer(s: Server, bmp: Bitmap?, ms: Long, meta: String = s.host, glyph: Int = 0) {
         Log.i(TAG, "${s.name} in $ms ms")
         player.hosts += s.host // Its covers may show in the player.
-        val v = row(servers, s.name, meta, bmp).apply {
+        if (!s.library) Player.servers[s.host] = s.name // Now Playing's source for its tracks.
+        val v = row(servers, s.name, meta, bmp, glyph).apply {
             findViewById<View>(R.id.chevron).shown = true
             setOnClickListener {
                 val i = Intent(this@MainActivity, BrowseActivity::class.java)
@@ -379,6 +617,9 @@ class MainActivity : Activity() {
                     i.putExtra(BrowseActivity.ROOM_ID, it.id)
                         .putExtra(BrowseActivity.ROOM_NAME, it.name)
                         .putExtra(BrowseActivity.ROOM_HOST, it.host)
+                        .putExtra(BrowseActivity.ROOM_MEMBERS, it.members)
+                        .putExtra(BrowseActivity.ROOM_OWN, it.own)
+                        .putExtra(BrowseActivity.ROOM_PLAYERS, it.players.toTypedArray())
                 }
                 startActivity(i)
             }

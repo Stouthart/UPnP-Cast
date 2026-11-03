@@ -47,7 +47,7 @@
                 android:fontFamily="sans-serif-medium"
                 android:padding="8dp"
                 android:text="@string/clear_queue"
-                android:textColor="@color/accent"
+                android:textColor="@color/accent_text"
                 android:textSize="15sp"
                 android:visibility="gone" />
         </LinearLayout>

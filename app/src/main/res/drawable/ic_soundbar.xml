@@ -1,0 +1,11 @@
+<!-- A room whose main player is a soundbar (Beam, Arc, Ray): a bar with its grille. Drawn for UPnP Cast. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="@color/text2"
+        android:fillType="evenOdd"
+        android:pathData="M3.5,9.5h17a2.5,2.5 0,0 1,2.5 2.5a2.5,2.5 0,0 1,-2.5 2.5h-17A2.5,2.5 0,0 1,1 12a2.5,2.5 0,0 1,2.5 -2.5zM5,11.4h14v1.2H5z" />
+</vector>

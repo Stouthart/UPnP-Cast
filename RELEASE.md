@@ -1,8 +1,21 @@
-<!-- 1.2 - Copyright (C) 2026 Stouthart. All rights reserved. -->
+<!-- 1.3 - Copyright (C) 2026 Stouthart. All rights reserved. -->
 
 # Release notes
 
 Highlights per version, newest first.
+
+## 1.3 - November 2026
+
+- **New colours:** white and light-grey surfaces with one clear blue in light mode, near-black greys in dark; the icon on dark grey, with a touch of that blue.
+- **Group rooms:** a new setting, off at first. When on, the Rooms card's checks work as check boxes: the checked rooms play together, in sync; checking a room adds it at their volume, after asking when it's playing something of its own, such as the TV; unchecking takes it out, and the others play on from where they were, also when it led them. When off, a tap chooses a room, as before, and its checks show the rooms grouped with it. Turning it off while rooms play together ends that: the leading room plays on, and the others go quiet.
+- **Group volume:** with rooms together, such as Kitchen + 1, the volume slider, mute and the volume buttons act on all of them: every speaker to the same level, rather than the Sonos app's shares.
+- **Grouped elsewhere:** when rooms are grouped or ungrouped outside the app, as in the Sonos app or by Spotify, every screen follows within a few seconds, Now Playing and the queue included, rather than staying on the group it opened with.
+- **Now Playing at once:** it opens with the cover, the title and the volume the mini player showed, the cover already sharp, rather than after a second or two; so do the other screens' mini players.
+- **A larger cover on taller screens:** Now Playing's controls and Queue stay at the bottom, and the cover takes the room above them.
+- **Tiles show a track's length:** a tile is too narrow for the artist and format as well; the list keeps them.
+- **Settings in view:** opening the Settings card scrolls all of it into view, its lower edge included.
+- **Source on Now Playing:** the format line starts with where the music comes from, as the Sonos app names it, such as `MinimServer · FLAC 96 kHz 24-bit`, `Spotify · Lossless 44.1 kHz 16-bit` or on the TV `HDMI · Dolby Atmos (MAT)`.
+- **Room icons:** each room shows the kind of its main speaker, from its model: soundbar, speaker, portable, Sub or Amp; and the model itself, as the Sonos app names it, such as Era 300, before the address. The app draws them, sharp at any size, so no picture is fetched; a room it hasn't read yet shows a speaker until it has. The Music library gets an icon of its own.
 
 ## 1.2 - November 2026
 

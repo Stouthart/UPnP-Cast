@@ -12,9 +12,10 @@ import java.util.concurrent.TimeUnit
 
 /**
  * Cover thumbnails: fetched and scaled down off the main thread, each URL once per size, and kept in memory.
- * [loaded] runs on the main thread when a thumbnail arrives, so the rows showing that URL can pick it up.
+ * [loaded] runs on the main thread when a thumbnail arrives, so the rows showing that URL can pick it up. [also]: a
+ * second size made from the same download, for another screen to find at once, as Now Playing's from the mini player.
  */
-class Art(val px: Int, private val loaded: (String) -> Unit) {
+class Art(val px: Int, private val also: Int = 0, private val loaded: (String) -> Unit) {
     companion object {
         // One cache for every screen, an eighth of the heap in all: screens on the back stack stay alive, and a cover
         // already shown at a size is there at once on the next screen that shows it at that size.
@@ -33,7 +34,7 @@ class Art(val px: Int, private val loaded: (String) -> Unit) {
         },
     ).apply { allowCoreThreadTimeOut(true) } // Idle loaders leave after 10 s instead of living as long as the screen.
 
-    private fun key(url: String) = "$px $url"
+    private fun key(url: String, size: Int = px) = "$size $url"
 
     operator fun get(url: String): Bitmap? = cache.get(key(url))
 
@@ -52,12 +53,16 @@ class Art(val px: Int, private val loaded: (String) -> Unit) {
         v.setImageResource(fallback)
         if (url == null || url in failed || !loading.add(url)) return
         later(pool) {
-            val t = runCatching { thumb(Http.get(url)) }.getOrNull()
+            val bytes = runCatching { Http.get(url) }.getOrNull()
+            val t = bytes?.let { runCatching { thumb(it, px) }.getOrNull() }
+            val big = if (t == null || also <= 0 || cache.get(key(url, also)) != null) null
+            else runCatching { thumb(bytes, also) }.getOrNull()
             main.post {
                 loading.remove(url)
                 if (t == null) failed += url
                 else {
                     cache.put(key(url), t)
+                    big?.let { cache.put(key(url, also), it) }
                     loaded(url)
                 }
             }
@@ -90,7 +95,7 @@ class Art(val px: Int, private val loaded: (String) -> Unit) {
     }
 
     /** Decoded at the smallest power-of-two step that still covers [px], then scaled to it. */
-    private fun thumb(b: ByteArray): Bitmap? {
+    private fun thumb(b: ByteArray, px: Int): Bitmap? {
         val o = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeByteArray(b, 0, b.size, o)
         val w = o.outWidth

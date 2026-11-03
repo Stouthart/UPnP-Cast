@@ -4,7 +4,7 @@
         <item name="android:windowNoTitle">true</item>
         <item name="android:windowBackground">@color/bg</item>
         <item name="android:colorBackground">@color/bg</item>
-        <item name="android:colorAccent">@color/accent</item>
+        <item name="android:colorAccent">@color/accent_text</item> <!-- Dialog buttons' text. -->
         <item name="android:textColorPrimary">@color/text</item>
         <item name="android:textColorSecondary">@color/text2</item>
         <item name="android:windowLightStatusBar">@bool/light_bars</item>
@@ -54,7 +54,7 @@
         <item name="android:scaleType">fitCenter</item>
     </style>
 
-    <!-- One of the three Appearance choices, a third of the row each. -->
+    <!-- A choice in a row of equal shares (Group rooms' two, Appearance's three). -->
     <style name="Segment">
         <item name="android:layout_width">0dp</item>
         <item name="android:layout_height">48dp</item> <!-- One height for segments and buttons, in both apps. -->
@@ -65,7 +65,7 @@
         <item name="android:maxLines">1</item>
         <item name="android:paddingHorizontal">6dp</item>
         <item name="android:textColor">@color/text</item>
-        <item name="android:textSize">14sp</item> <!-- At most: MainActivity shrinks all three when one doesn't fit. -->
+        <item name="android:textSize">14sp</item> <!-- At most: MainActivity shrinks Appearance's three when one doesn't fit. -->
     </style>
 
     <!-- A setting's name inside the Settings card. -->

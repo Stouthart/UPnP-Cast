@@ -62,13 +62,13 @@ class NowPlayingActivity : Activity() {
     private var largest = 0 // The cover's side when there is room: see size().
 
     /**
-     * A square cover: the width less the margins, but no more than 45% of the height. On a phone the rest can still
-     * be taller than the screen, once the bars take their share or a title runs to two lines, so on every layout the
-     * cover gives up exactly the overflow, and takes it back when there is room again.
+     * A square cover, as large as the screen leaves it: at most the width less the margins, and on every layout
+     * exactly the height the controls don't take, which keep to the bottom. A taller screen, as the Astra's, gets a
+     * larger cover; a title on two lines, the bars, split screen or landscape take it back, down to 160dp.
      */
     private fun size() {
         val m = resources.displayMetrics
-        largest = minOf(m.widthPixels - (48 * m.density).toInt(), (m.heightPixels * 0.45).toInt())
+        largest = m.widthPixels - (48 * m.density).toInt()
         cover(largest)
     }
 
@@ -76,11 +76,17 @@ class NowPlayingActivity : Activity() {
         val scroll: ScrollView = findViewById(R.id.scroll)
         val art: View = findViewById(R.id.player_art)
         val spare: View = findViewById(R.id.spacer)
-        findViewById<View>(R.id.player).addOnLayoutChangeListener { v, _, _, _, _, _, _, _, _ ->
-            // The content's own height is the column's less the spacer's share; the screen's is the ScrollView's.
-            val over = v.height - spare.height - (scroll.height - scroll.paddingTop - scroll.paddingBottom)
+        val player: View = findViewById(R.id.player)
+        var asked = 0 // The side last set: never asked twice, so a frame can't wait for good.
+        // Before each frame, so the cover is never drawn at a size it then leaves: a new side skips this frame for the
+        // layout it needs. The content's own height is the column's less the spacer's; the screen's is the ScrollView's.
+        player.viewTreeObserver.addOnPreDrawListener {
+            val over = player.height - spare.height - (scroll.height - scroll.paddingTop - scroll.paddingBottom)
             val side = coverSide(art.height - over, (160 * resources.displayMetrics.density).toInt(), largest)
-            if (side != art.height) v.post { cover(side) } // Not inside this layout pass.
+            if (scroll.height == 0 || side == art.height || side == asked) return@addOnPreDrawListener true
+            asked = side
+            cover(side)
+            false
         }
     }
 

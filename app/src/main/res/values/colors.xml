@@ -1,18 +1,21 @@
 <resources>
-    <!-- Stouthart's palette, from the company logo (light); values-night has the dark one. The logo's ramp:
-         #154056/#5797C2, #2B495B/#7EABCE, #3E5361/#A6C2DA, #4F5E67/#CFDFE9.
-         Every text colour is at least 4.5:1 on what it sits on. Surfaces and the accent are blue; text is neutral,
-         so the accent stands out from it (a navy text made the accent unreadable as a highlight). -->
-    <color name="bg">#FFF4F8FB</color>
-    <color name="card">#FFE4EDF3</color>
-    <color name="panel">#FFCFDFE9</color> <!-- Logo. Rows and panels: solid, as a tint failed contrast in dark. -->
-    <color name="divider">#1F154056</color>
-    <color name="text">#FF1A1F23</color>
-    <color name="text2">#FF555D63</color>
-    <color name="accent">#FF154056</color> <!-- Logo. -->
+    <!-- The Studio palette (light), after VS Code's Light 2026; values-night has the dark one. White and grey
+         surfaces, neutral text, one blue accent: fills (buttons, the Play circle, pills, bars, sliders) take
+         accent, text and line icons accent_text; a chosen segment a wash of it (chosen), with an accent edge and
+         text. Every text colour is at least 4.5:1 on what it sits on (the lowest: success on a panel, 4.5); fills
+         and icons at least 3:1. -->
+    <color name="bg">#FFFFFFFF</color>
+    <color name="card">#FFFAFAFD</color>
+    <color name="panel">#FFF0F0F3</color> <!-- Rows and panels: grey, set apart from the cards. -->
+    <color name="divider">#FFE2E2E5</color>
+    <color name="text">#FF202020</color>
+    <color name="text2">#FF606060</color>
+    <color name="accent">#FF0069CC</color>
+    <color name="accent_text">#FF0069CC</color> <!-- The same as accent in light. -->
     <color name="on_accent">#FFFFFFFF</color>
+    <color name="chosen">#FFE6EEF9</color> <!-- 8% accent on a card: accent text 4.6:1. -->
     <color name="ripple">#33FFFFFF</color> <!-- On accent buttons. -->
-    <color name="warning">#FFA63522</color>
-    <color name="success">#FF256B55</color>
-    <color name="icon_bg">#FF154056</color> <!-- Logo. The launcher icon's, in both themes. -->
+    <color name="warning">#FFAD0707</color>
+    <color name="success">#FF2E7D32</color>
+    <color name="icon_bg">#FF232426</color> <!-- The launcher icon's dark grey, in both themes. -->
 </resources>

@@ -25,7 +25,7 @@ class HttpException(val code: Int, val upnp: Int) :
  * and sending the request in one write keeps Nagle from holding its tail back for a round trip.
  */
 object Http {
-    private const val TIMEOUT = 3000 // ms, to connect and for each read.
+    const val TIMEOUT = 3000 // ms, to connect and for each read.
     private const val DEADLINE = 15_000_000_000L // ns for a whole request: a device dripping a byte per read can't hold a thread.
     private const val MAX_BODY = 8 shl 20 // No sane reply is this big: a search of all 1,891 tracks is 2.4 MB.
     private const val MAX_LINE = 8192
@@ -33,21 +33,24 @@ object Http {
 
     fun get(url: String): ByteArray = send(URL(url), "GET", "", null)
 
-    /** Calls [action] of [service] (e.g. "AVTransport") at [control]; [args] is the arguments' XML, escaped. */
-    fun soap(control: String, service: String, action: String, args: String = ""): ByteArray {
+    /**
+     * Calls [action] of [service] (e.g. "AVTransport") at [control]; [args] is the arguments' XML, escaped. [wait]: ms
+     * for each read, longer only for an action the device answers once it's done.
+     */
+    fun soap(control: String, service: String, action: String, args: String = "", wait: Int = TIMEOUT): ByteArray {
         val type = "urn:schemas-upnp-org:service:$service:1"
         val body = "<?xml version=\"1.0\" encoding=\"utf-8\"?><s:Envelope xmlns:s=\"http://schemas.xmlsoap.org/soap/" +
             "envelope/\" s:encodingStyle=\"http://schemas.xmlsoap.org/soap/encoding/\"><s:Body><u:$action xmlns:u=\"" +
             "$type\">$args</u:$action></s:Body></s:Envelope>"
         val headers = "Content-Type: text/xml; charset=\"utf-8\"\r\nSOAPACTION: \"$type#$action\"\r\n"
-        return send(URL(control), "POST", headers, body.toByteArray())
+        return send(URL(control), "POST", headers, body.toByteArray(), wait)
     }
 
     // Writes have no timeout of their own: at the deadline this closes the socket, which ends any I/O still on it.
     private val watchdog = ScheduledThreadPoolExecutor(1) { r -> Thread(r, "http-deadline").apply { isDaemon = true } }
         .apply { removeOnCancelPolicy = true }
 
-    private fun send(u: URL, method: String, headers: String, body: ByteArray?): ByteArray {
+    private fun send(u: URL, method: String, headers: String, body: ByteArray?, wait: Int = TIMEOUT): ByteArray {
         if (u.protocol != "http") throw IOException("Not http: $u")
         val net = Lan.wifi ?: throw IOException("No WiFi") // Not a 3 s wait for a LAN address over mobile data.
         // An address, never a name: no DNS, which could take any time and point anywhere. The path goes on the request
@@ -66,7 +69,7 @@ object Http {
             val kill = watchdog.schedule({ runCatching { s.close() } }, DEADLINE, TimeUnit.NANOSECONDS)
             try {
                 s.tcpNoDelay = true
-                s.soTimeout = TIMEOUT
+                s.soTimeout = wait
                 s.connect(InetSocketAddress(InetAddress.getByName(u.host), port), TIMEOUT) // A literal: no lookup.
                 s.getOutputStream().write(if (body == null) head else head + body)
 

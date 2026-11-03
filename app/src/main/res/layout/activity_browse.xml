@@ -51,7 +51,7 @@
                 android:contentDescription="@string/play"
                 android:padding="8dp"
                 android:src="@drawable/ic_play"
-                android:tint="@color/accent"
+                android:tint="@color/accent_text"
                 android:visibility="gone" />
 
             <!-- The Music library's top level only, which has no tracks and so no Play: Scan for new content. -->

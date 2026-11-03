@@ -1,11 +1,16 @@
 package nl.stouthart.upnpcast
 
+import android.os.SystemClock
+import android.util.Log
 import android.util.Xml
 import org.xmlpull.v1.XmlPullParser.END_DOCUMENT
 import org.xmlpull.v1.XmlPullParser.START_TAG
 import java.io.IOException
 import java.io.StringReader
 import java.util.Locale
+import java.util.concurrent.ExecutionException
+import java.util.concurrent.Executors
+import kotlin.math.abs
 
 /** Where tracks go in the room's queue, in the Sonos app's terms. */
 enum class How { NOW, NEXT, END, REPLACE }
@@ -57,19 +62,86 @@ fun seconds(t: String?): Int {
 /** "1:46" or "1:02:03". */
 fun clock(s: Int) = if (s >= 3600) "%d:%02d:%02d".format(s / 3600, s / 60 % 60, s % 60) else "%d:%02d".format(s / 60, s % 60)
 
+private const val TAG = "UPnPCast"
+
 /** "H:MM:SS" for the speaker: in ASCII digits whatever the phone's language, as Sonos reads no other. */
 fun hms(s: Int) = "%d:%02d:%02d".format(Locale.ROOT, s / 3600, s / 60 % 60, s % 60)
 
 /** The room's queue and transport, always on its coordinator; the speaker fetches each track from the server itself. */
 object Sonos {
     private const val BATCH = 16 // The most AddMultipleURIsToQueue takes per call.
+    private const val RESUME_MS = 300L // After a hand-over, between tries to put the music back where it was.
+    private const val RESUME_TRIES = 10
+    private const val HAND_OVER_MS = 10_000 // Sonos answers a hand-over once it's done: 4 s with Spotify playing.
+    private const val END_S = 2 // A hand-over's place is put back at most this short of the track's end.
+    private const val MEMBERS_AT_ONCE = 4 // A group's volume goes to this many of its players at a time.
     private const val QUEUE_PAGE = 100 // Sonos caps the items per Browse.
 
-    private fun avt(r: Room, action: String, args: String = ""): ByteArray =
-        Http.soap("http://${r.host}/MediaRenderer/AVTransport/Control", "AVTransport", action, "<InstanceID>0</InstanceID>$args")
+    private fun avt(r: Room, action: String, args: String = ""): ByteArray = avt(r.host, action, args)
 
+    private fun avt(host: String, action: String, args: String = "", wait: Int = Http.TIMEOUT): ByteArray = Http.soap(
+        "http://$host/MediaRenderer/AVTransport/Control", "AVTransport", action, "<InstanceID>0</InstanceID>$args", wait,
+    )
+
+    /**
+     * [x] joins the group [lead] leads, and plays what it plays, in sync, at its volume: a group's is absolute, so
+     * the new room takes it first, before it sounds, rather than joining at its own. Not at all when that volume
+     * can't be read: it might join far louder.
+     */
+    fun join(x: Room, lead: Room) {
+        val v = volume(lead)
+        if (v !in 0..100) throw IOException("No volume from ${lead.name}")
+        rc(x, "SetVolume", "<DesiredVolume>$v</DesiredVolume>")
+        avt(x.own, "SetAVTransportURI", "<CurrentURI>x-rincon:${Upnp.esc(lead.id)}</CurrentURI><CurrentURIMetaData></CurrentURIMetaData>")
+    }
+
+    /** [x] leaves its group and goes quiet; the others play on. */
+    fun leave(x: Room) {
+        avt(x.own, "BecomeCoordinatorOfStandaloneGroup")
+    }
+
+    /**
+     * The group's leader at [host] hands the music to the player [to] (its id), whose own player is at [toHost], and
+     * leaves. Sonos starts the track over on the new leader, so it's put back where it was: the same queue track,
+     * as far in as it had got by then. Music without a position, as the TV or a stream, just carries on.
+     */
+    fun handOver(host: String, to: String, toHost: String) {
+        val was = runCatching { position(host) }.getOrNull()
+        // Paused, the place stays where it was; a seek leaves play or pause as it is.
+        val playing = runCatching { Upnp.arg(avt(host, "GetTransportInfo"), "CurrentTransportState") }.getOrNull() == "PLAYING"
+        val t0 = SystemClock.elapsedRealtime()
+        avt(
+            host, "DelegateGroupCoordinationTo",
+            "<NewCoordinator>${Upnp.esc(to)}</NewCoordinator><RejoinGroup>0</RejoinGroup><ClearSource>0</ClearSource>",
+            HAND_OVER_MS,
+        )
+        if (was == null || was.duration <= 0 || was.index <= 0) return
+        var s = was.elapsed
+        for (n in 1..RESUME_TRIES) { // The new leader takes a moment to have the queue; a seek before that fails.
+            Thread.sleep(RESUME_MS)
+            val gone = if (playing) ((SystemClock.elapsedRealtime() - t0) / 1000).toInt() else 0
+            s = minOf(was.elapsed + gone, was.duration - END_S).coerceAtLeast(0) // Never past the track's end.
+            if (runCatching { resumeAt(toHost, was.index, s) }.getOrDefault(false)) return
+        }
+        Log.i(TAG, "Hand-over to $toHost: not back at track ${was.index}, ${hms(s)}")
+    }
+
+    /**
+     * Puts the player at [host] at queue track [index], [s] seconds in, unless it's there already, as when the
+     * hand-over kept its place; true once it reports being there, on that track.
+     */
+    private fun resumeAt(host: String, index: Int, s: Int): Boolean {
+        val p = position(host)
+        if (p.index == index && abs(p.elapsed - s) <= 3) return true
+        if (p.index != index) avt(host, "Seek", "<Unit>TRACK_NR</Unit><Target>$index</Target>")
+        avt(host, "Seek", "<Unit>REL_TIME</Unit><Target>${hms(s)}</Target>")
+        val now = position(host)
+        return now.index == index && abs(now.elapsed - s) <= 3
+    }
+
+    // The room's own volume and mute: on its own player, which for a room in a group isn't the coordinator.
     private fun rc(r: Room, action: String, args: String): ByteArray = Http.soap(
-        "http://${r.host}/MediaRenderer/RenderingControl/Control", "RenderingControl", action,
+        "http://${r.own}/MediaRenderer/RenderingControl/Control", "RenderingControl", action,
         "<InstanceID>0</InstanceID><Channel>Master</Channel>$args",
     )
 
@@ -79,6 +151,18 @@ object Sonos {
     fun queued(r: Room) = Upnp.arg(avt(r, "GetMediaInfo"), "CurrentURI") == queueUri(r)
 
     /** PLAYING, PAUSED_PLAYBACK, STOPPED or TRANSITIONING. */
+    /**
+     * The group of [r]'s coordinator as it reports it, in ~600 bytes: its id and players change with every regrouping,
+     * made here or elsewhere.
+     */
+    fun group(r: Room): String {
+        val (id, players) = Upnp.args(
+            Http.soap("http://${r.host}/ZoneGroupTopology/Control", "ZoneGroupTopology", "GetZoneGroupAttributes"),
+            "CurrentZoneGroupID", "CurrentZonePlayerUUIDsInGroup",
+        )
+        return "$id $players"
+    }
+
     fun state(r: Room) = Upnp.arg(avt(r, "GetTransportInfo"), "CurrentTransportState") ?: ""
 
     /** Pauses what plays, else plays; the state is read right before, never trusted from an earlier poll. */
@@ -99,17 +183,58 @@ object Sonos {
         avt(r, "Seek", "<Unit>REL_TIME</Unit><Target>${hms(s)}</Target>")
     }
 
-    fun volume(r: Room) = Upnp.arg(rc(r, "GetVolume", ""), "CurrentVolume")?.toIntOrNull() ?: -1
+    // A group's volume and mute, on its coordinator: what the Sonos app's slider sets for a group.
+    private fun grc(r: Room, action: String, args: String = ""): ByteArray = Http.soap(
+        "http://${r.host}/MediaRenderer/GroupRenderingControl/Control", "GroupRenderingControl", action,
+        "<InstanceID>0</InstanceID>$args",
+    )
 
+    fun volume(r: Room) = Upnp.arg(
+        if (r.members > 0) grc(r, "GetGroupVolume") else rc(r, "GetVolume", ""), "CurrentVolume",
+    )?.toIntOrNull() ?: -1
+
+    /**
+     * Sets the room's volume. A group's is absolute, unlike the Sonos app's: every speaker gets [v] itself, rather than
+     * all moving by the same share. One that doesn't answer doesn't keep the others from theirs.
+     */
     fun volume(r: Room, v: Int) {
-        rc(r, "SetVolume", "<DesiredVolume>${v.coerceIn(0, 100)}</DesiredVolume>")
+        val d = "<DesiredVolume>${v.coerceIn(0, 100)}</DesiredVolume>"
+        if (r.members == 0) {
+            rc(r, "SetVolume", d)
+            return
+        }
+        // Side by side, so one slow to answer costs its own wait only, not the others' as well.
+        val pool = Executors.newFixedThreadPool(minOf(r.players.size, MEMBERS_AT_ONCE))
+        var failed: Exception? = null
+        try {
+            val sets = r.players.map { h ->
+                pool.submit {
+                    Http.soap(
+                        "http://$h/MediaRenderer/RenderingControl/Control", "RenderingControl", "SetVolume",
+                        "<InstanceID>0</InstanceID><Channel>Master</Channel>$d",
+                    )
+                }
+            }
+            for (f in sets) {
+                try {
+                    f.get()
+                } catch (e: ExecutionException) {
+                    failed = e.cause as? Exception ?: e
+                }
+            }
+        } finally {
+            pool.shutdownNow() // Done, or the player stopped waiting: writes not yet begun don't start.
+        }
+        failed?.let { throw it }
     }
 
-    fun muted(r: Room) = Upnp.arg(rc(r, "GetMute", ""), "CurrentMute") == "1"
+    fun muted(r: Room) =
+        Upnp.arg(if (r.members > 0) grc(r, "GetGroupMute") else rc(r, "GetMute", ""), "CurrentMute") == "1"
 
     /** Like [toggle], from the state read right before. */
     fun toggleMute(r: Room) {
-        rc(r, "SetMute", "<DesiredMute>${if (muted(r)) 0 else 1}</DesiredMute>")
+        val d = "<DesiredMute>${if (muted(r)) 0 else 1}</DesiredMute>"
+        if (r.members > 0) grc(r, "SetGroupMute", d) else rc(r, "SetMute", d)
     }
 
     fun mode(r: Room) = Mode.of(Upnp.arg(avt(r, "GetTransportSettings"), "PlayMode") ?: "")
@@ -137,9 +262,11 @@ object Sonos {
         return code.toIntOrNull()?.let { TV[it] } ?: "Format $code"
     }
 
-    fun position(r: Room): Position {
+    fun position(r: Room) = position(r.host)
+
+    private fun position(host: String): Position {
         val (index, meta, duration, elapsed, uri) =
-            Upnp.args(avt(r, "GetPositionInfo"), "Track", "TrackMetaData", "TrackDuration", "RelTime", "TrackURI")
+            Upnp.args(avt(host, "GetPositionInfo"), "Track", "TrackMetaData", "TrackDuration", "RelTime", "TrackURI")
         return Position(meta, index?.toIntOrNull() ?: 0, seconds(elapsed), seconds(duration), uri ?: "")
     }
 
@@ -225,12 +352,13 @@ object Sonos {
     fun scanning(control: String) = Upnp.arg(Http.soap(control, "ContentDirectory", "GetShareIndexInProgress"), "IsIndexing") == "1"
 
     /** The room's queue over all its pages; [url] vets each cover and track URL, as for a server. */
-    fun queue(r: Room, url: (String) -> String?): List<Entry> {
+    fun queue(r: Room, url: (String) -> String?, wanted: () -> Boolean = { true }): List<Entry> {
         val out = ArrayList<Entry>()
         var start = 0
         var pages = 0
         // Up to 10,000 tracks in at most 200 pages, and only forward: a page of nothing, or a negative count, ends it.
-        while (out.size < 10_000 && pages++ < 200) {
+        // [wanted] is asked before each page: a load the screen has left, or overtaken, stops there.
+        while (out.size < 10_000 && pages++ < 200 && wanted()) {
             val p = Upnp.browse(contentDirectory(r), url, "Q:0", start, QUEUE_PAGE)
             out += p.entries
             if (p.returned <= 0) break

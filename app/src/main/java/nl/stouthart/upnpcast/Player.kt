@@ -18,6 +18,7 @@ import android.widget.Toast
 import java.net.URL
 import java.net.URLEncoder
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.TimeUnit
@@ -25,12 +26,14 @@ import java.util.concurrent.TimeUnit
 private const val QUIET_MS = 1500L // After a change, polls leave that control alone until it has landed.
 private const val SLACK_MS = 250L // A position reply's trip, on top of the speaker rounding down to whole seconds.
 private const val SETTLE_MS = 4000L // How long a seek may take to land, while the speaker still reports 0 or the old place.
+private const val SEED_MS = 15_000L // How old what another screen showed may be for the next to start from it.
 private const val HOSTS = "hosts"
 
 /**
  * The room's track and controls: the mini player at the foot of a screen, or all of Now Playing when the layout has a
  * progress bar. While its screen is visible it asks the room every few seconds; commands share that one thread, so a poll
- * never overlaps a command.
+ * never overlaps a command. The volume has a thread of its own: a speaker of a group slow to answer doesn't hold up
+ * Play/Pause or the polls.
  */
 @SuppressLint("SetTextI18n") // The volume is a plain number, as the Sonos app shows it.
 class Player(private val a: Activity) {
@@ -38,11 +41,17 @@ class Player(private val a: Activity) {
         /** Hands [r] and the cover [hosts] to the next screen's player. */
         fun put(i: Intent, r: Room, hosts: Set<String>): Intent = i.putExtra(BrowseActivity.ROOM_ID, r.id)
             .putExtra(BrowseActivity.ROOM_NAME, r.name).putExtra(BrowseActivity.ROOM_HOST, r.host)
-            .putExtra(HOSTS, hosts.toTypedArray())
+            .putExtra(BrowseActivity.ROOM_MEMBERS, r.members).putExtra(BrowseActivity.ROOM_OWN, r.own)
+            .putExtra(BrowseActivity.ROOM_PLAYERS, r.players.toTypedArray()).putExtra(HOSTS, hosts.toTypedArray())
 
         fun room(i: Intent): Room? {
             val id = i.getStringExtra(BrowseActivity.ROOM_ID) ?: return null
-            return Room(id, i.getStringExtra(BrowseActivity.ROOM_NAME) ?: "", i.getStringExtra(BrowseActivity.ROOM_HOST) ?: return null)
+            val host = i.getStringExtra(BrowseActivity.ROOM_HOST) ?: return null
+            val own = i.getStringExtra(BrowseActivity.ROOM_OWN) ?: host
+            return Room(
+                id, i.getStringExtra(BrowseActivity.ROOM_NAME) ?: "", host, i.getIntExtra(BrowseActivity.ROOM_MEMBERS, 0), own,
+                i.getStringArrayExtra(BrowseActivity.ROOM_PLAYERS)?.toList() ?: listOf(own),
+            )
         }
 
         fun hosts(i: Intent): Array<String> = i.getStringArrayExtra(HOSTS) ?: emptyArray()
@@ -51,15 +60,26 @@ class Player(private val a: Activity) {
         // player shows on every screen and stays, for the rest of the session.
         @Volatile
         private var seen = false
+
+        /** The UPnP servers' names by address, as the main screen found them: Now Playing's source for their tracks. */
+        val servers: MutableMap<String, String> = ConcurrentHashMap()
+
+        // What a player showed last, main thread only: the next screen's player on the same room starts from it, so
+        // its cover, title and volume are there at once rather than after its first questions to the room.
+        private var last: Last? = null
     }
+
+    /** [answer] for [room]; [slow]: the uptime its volume, mute and play mode were read, maybe by an earlier poll. */
+    private class Last(val room: Room, val answer: Answer, val slow: Long)
 
     /**
      * One poll's answer, [at] the uptime the position arrived; volume -1 and the nulls mean "not asked this time".
-     * [tv]: the TV input's format, asked only on Now Playing while the TV plays.
+     * [tv]: the TV input's format, asked only on Now Playing while the TV plays. [household]: read again when the
+     * group reported itself changed.
      */
     private class Answer(
         val state: String, val pos: Position, val at: Long, val track: Track?, val volume: Int, val muted: Boolean?, val mode: Mode?,
-        val queued: Boolean?, val tv: String?,
+        val queued: Boolean?, val tv: String?, val household: Upnp.Topology?, val group: String? = null,
     )
 
     /** Where covers may come from besides the speaker itself: the servers this app knows. */
@@ -77,12 +97,18 @@ class Player(private val a: Activity) {
             sending = false
             quiet = 0L
             level.text = ""
+            heard = false
+            grouping = null
             place()
+            v?.let { seed(it) }
             refresh()
         }
 
     /** Runs when the mini player shows or hides. */
     var onShown: ((Boolean) -> Unit)? = null
+
+    /** Runs after the player followed the speakers to a new group, with the household as it is now. */
+    var onRegroup: ((Upnp.Topology) -> Unit)? = null
 
     /** Each answer, on the main thread, with whether the room plays its queue (only known when [media] is set). */
     var onPosition: ((Position, Boolean) -> Unit)? = null
@@ -99,6 +125,8 @@ class Player(private val a: Activity) {
     private var ticks = 0 // The poll thread's, like the two below.
     private var lastMeta: String? = null // TrackMetaData is parsed only when it differs from the last.
     private var lastTrack: Track? = null
+    @Volatile
+    private var grouping: String? = null // The group as the coordinator last reported it; null: not asked yet.
 
     /** What a tap on the mini player does: Now Playing, unless a screen says otherwise. */
     var onOpen: () -> Unit = { open(NowPlayingActivity::class.java) }
@@ -132,10 +160,18 @@ class Player(private val a: Activity) {
     private val repeat: ImageView? = a.findViewById(R.id.player_repeat)
     private val full = progress != null
 
-    private val covers: Art = Art(
-        if (full) minOf(a.resources.displayMetrics.widthPixels, 1200) else (48 * a.resources.displayMetrics.density).toInt(),
-    ) { url -> if (art.tag == url) covers[url]?.let { covers.fill(art, it) } }
+    // Now Playing's cover by the screen's short side, which covers its widest in either orientation; the mini player
+    // makes that size too, from the same download, so Now Playing has it the moment it opens.
+    private val covers: Art = a.resources.displayMetrics.let { m ->
+        val big = minOf(m.widthPixels, m.heightPixels, 1200)
+        if (full) Art(big) { url -> loaded(url) } else Art((48 * m.density).toInt(), big) { url -> loaded(url) }
+    }
+
+    private fun loaded(url: String) {
+        if (art.tag == url) covers[url]?.let { covers.fill(art, it) }
+    }
     private var exec: ScheduledExecutorService? = null
+    private var volumes: ExecutorService? = null // SetVolume, one at a time, beside exec.
 
     @Volatile
     private var gen = 0 // Drops a poll's answer once the room changed or the screen went away.
@@ -150,8 +186,13 @@ class Player(private val a: Activity) {
     private var seeking = false
     private var quiet = 0L
     private var wanted = -1 // The volume still to send; one SetVolume is in flight at most.
+    private var landed = 0L // The uptime the last SetVolume came back.
     private var sending = false
     private var keyed = false // The last volume button press went to the room, so its release does too.
+
+    // This room's volume was read since the room or the screen came: what another screen showed may be old, and the
+    // volume buttons set an absolute level from it.
+    private var heard = false
 
     init {
         toggle.setOnClickListener {
@@ -226,9 +267,12 @@ class Player(private val a: Activity) {
         if (full && Lan.wifi == null) a.finish() // As when WiFi went while the app was away.
         place()
         if (covers.retry()) shown = "" // A cover dropped at stop() is asked for again by the first answer.
+        fresh = true // Everything at once: while away, the volume or the grouping may have changed elsewhere.
         live = true
         val s = Prefs.poll(a).toLong()
         exec = Executors.newSingleThreadScheduledExecutor().apply { scheduleWithFixedDelay(::poll, 0, s, TimeUnit.SECONDS) }
+        volumes = Executors.newSingleThreadExecutor()
+        heard = false // While away, the volume may have changed elsewhere: the buttons wait until it's read again.
     }
 
     fun stop() {
@@ -240,6 +284,8 @@ class Player(private val a: Activity) {
         sending = false
         exec?.shutdownNow()
         exec = null
+        volumes?.shutdownNow()
+        volumes = null
         ui.removeCallbacks(tick)
         covers.pause()
     }
@@ -320,7 +366,7 @@ class Player(private val a: Activity) {
             else -> return false
         }
         if (e.action != KeyEvent.ACTION_DOWN) return keyed
-        keyed = room != null && Lan.wifi != null && level.text.isNotEmpty() && (full || view.visibility == View.VISIBLE)
+        keyed = room != null && Lan.wifi != null && heard && (full || view.visibility == View.VISIBLE)
         if (!keyed) return false
         val step = Prefs.step(a)
         val v = (volume.progress + if (up) step else -step).coerceIn(0, 100)
@@ -339,16 +385,19 @@ class Player(private val a: Activity) {
         sending = true
         wanted = -1
         val g = gen
-        later {
-            runCatching { Sonos.volume(r, v) }
-            fresh = true // The next poll reads the volume back, once the quiet time lets it show.
-            a.runOnUiThread {
-                if (g != gen) return@runOnUiThread // A room switch or stop() has reset all this meanwhile.
-                sending = false
-                if (wanted >= 0) send(wanted)
+        val sent = runCatching {
+            volumes?.execute {
+                runCatching { Sonos.volume(r, v) }
+                fresh = true // The next poll reads the volume back, once the quiet time lets it show.
+                a.runOnUiThread {
+                    if (g != gen) return@runOnUiThread // A room switch or stop() has reset all this meanwhile.
+                    landed = SystemClock.uptimeMillis()
+                    sending = false
+                    if (wanted >= 0) send(wanted)
+                }
             }
-        }
-        if (exec == null) sending = false
+        }.isSuccess
+        if (volumes == null || !sent) sending = false // Stopped: nothing went out.
     }
 
     private fun poll() {
@@ -366,12 +415,17 @@ class Player(private val a: Activity) {
                 lastTrack = Sonos.track(p.meta)
                 lastMeta = p.meta
             }
+            // With the slow values, whether the speakers were grouped anew, also by the Sonos app or Spotify; only then
+            // the household itself (~4 KB), once per change. Neither failing keeps the rest from showing.
+            val now = if (all) runCatching { Sonos.group(r) }.getOrNull() else null
+            val household = if (now == null || now == grouping) null else runCatching { Upnp.topology(r.host) }.getOrNull()
             Answer(
                 state, p, got, lastTrack,
                 if (all) Sonos.volume(r) else -1, if (all) Sonos.muted(r) else null,
                 if (all && full) Sonos.mode(r) else null, if (all && media) Sonos.queued(r) else null,
                 // Its own failure only leaves the line empty; the player still shows the rest.
                 if (full && p.uri.startsWith("x-sonos-htastream:")) runCatching { Sonos.tvFormat(r) }.getOrNull() else null,
+                household, now,
             )
         }.getOrNull()
         a.runOnUiThread { if (g == gen) show(r, answer) }
@@ -392,7 +446,7 @@ class Player(private val a: Activity) {
     }
 
     private fun tint(v: ImageView, on: Boolean) {
-        v.imageTintList = ColorStateList.valueOf(a.getColor(if (on) R.color.accent else R.color.text2))
+        v.imageTintList = ColorStateList.valueOf(a.getColor(if (on) R.color.accent_text else R.color.text2))
     }
 
     private fun times(e: Int, d: Int) {
@@ -413,7 +467,51 @@ class Player(private val a: Activity) {
         onShown?.invoke(on)
     }
 
-    private fun show(r: Room, answer: Answer?) {
+    /**
+     * The speakers were grouped anew: the player moves to the group of the room chosen on the main screen, as that
+     * screen does, when it isn't on it already. True when it moved.
+     */
+    private fun follow(t: Upnp.Topology): Boolean {
+        val g = t.group(Prefs.room(a)) ?: return false
+        if (g.same(room)) return false
+        room = g // Asks the new group at once.
+        onRegroup?.invoke(t)
+        return true
+    }
+
+    /**
+     * Shows what a player showed for [r] last, if it did lately: the track, its place, which counts on from when it
+     * was read, and the volume and mute when those are recent too.
+     */
+    private fun seed(r: Room) {
+        val l = last?.takeIf { it.room.same(r) } ?: return
+        val now = SystemClock.uptimeMillis()
+        if (now - l.answer.at > SEED_MS) return
+        val a = l.answer
+        show(r, if (now - l.slow <= SEED_MS) a else Answer(a.state, a.pos, a.at, a.track, -1, null, null, null, a.tv, null), seeded = true)
+    }
+
+    /** Keeps [a] for the next screen's player, with the volume, mute and play mode of the last answer that had them. */
+    private fun remember(r: Room, a: Answer) {
+        val p = last?.takeIf { a.volume < 0 && it.room.same(r) }
+        val s = p?.answer
+        val kept = Answer(
+            a.state, a.pos, a.at, a.track, s?.volume ?: a.volume, s?.muted ?: a.muted, s?.mode ?: a.mode,
+            s?.queued ?: a.queued, a.tv, null, // Never the household: a seed doesn't regroup.
+        )
+        last = Last(r, kept, p?.slow ?: a.at)
+    }
+
+    /** [seeded]: what another screen showed, not this room's answer yet. */
+    private fun show(r: Room, answer: Answer?, seeded: Boolean = false) {
+        // The new grouping counts as seen only once its answer is here, whole: a poll that failed after reading it
+        // leaves it to the next. Before follow(), whose room change resets it.
+        val h = answer?.household
+        if (h != null) {
+            grouping = answer.group
+            if (follow(h)) return // The answer was the group before.
+        }
+        if (answer != null) remember(r, answer)
         val t = answer?.track
         val plays = answer != null && (answer.state == "PLAYING" || answer.state == "TRANSITIONING")
         if (answer != null && (plays || answer.pos.uri.isNotEmpty())) seen = true
@@ -433,22 +531,28 @@ class Player(private val a: Activity) {
         }
         val detail = listOf(r.name, t?.artist ?: "", if (full) t?.album ?: "" else "").filter { it.isNotEmpty() }.joinToString(" · ")
         val cover = t?.let { cover(r, it.art, it.uri) }
-        val quality = t?.format ?: answer?.tv ?: "" // The TV has no track, but its input format.
+        // Now Playing's line: where it comes from, unless the title says so already, then its format. The TV has no
+        // track, but its input format.
+        val src = if (full && answer != null) sourceName(r, answer.pos.uri).takeIf { it != name } ?: "" else ""
+        val quality = listOf(src, t?.format ?: answer?.tv ?: "").filter { it.isNotEmpty() }.joinToString(" · ")
         val now = "$name\n$detail\n$cover\n$quality"
         if (now != shown) {
             shown = now
             title.text = name
             meta.text = SpannableString(detail).apply {
-                if (r.name.isNotEmpty()) setSpan(ForegroundColorSpan(a.getColor(R.color.accent)), 0, r.name.length, 0)
+                if (r.name.isNotEmpty()) setSpan(ForegroundColorSpan(a.getColor(R.color.accent_text)), 0, r.name.length, 0)
             }
             format?.text = quality
             covers.show(art, cover, R.drawable.ic_music)
         }
         if (answer == null) return
         val v = answer.volume
-        val calm = SystemClock.uptimeMillis() > quiet
+        // Not while a change is out, nor from a reading taken before the last one landed: a slow speaker would have
+        // the slider jump back, and the next volume button press go from there.
+        val calm = !sending && SystemClock.uptimeMillis() > quiet && answer.at > landed
         if (v >= 0 && !dragging && calm && v != volume.progress) volume.progress = v
         if (level.text.isEmpty() && v >= 0) level.text = v.toString()
+        if (v >= 0 && !seeded) heard = true // Read from the room itself: the volume buttons may go from it.
 
         progress?.let {
             val p = answer.pos
@@ -494,6 +598,19 @@ class Player(private val a: Activity) {
             }
         }
         onPosition?.invoke(answer.pos, queued)
+    }
+
+    /** [uri]'s source in the Sonos app's words, or "" for one it doesn't name, as other services or a server unknown. */
+    private fun sourceName(r: Room, uri: String) = when (source(uri, Prefs.model(a, r.id))) {
+        Source.HDMI -> a.getString(R.string.hdmi)
+        Source.SPDIF -> a.getString(R.string.spdif)
+        Source.SPOTIFY -> a.getString(R.string.spotify)
+        Source.AIRPLAY -> a.getString(R.string.airplay)
+        Source.LIBRARY -> a.getString(R.string.music_library)
+        Source.LINE_IN -> a.getString(R.string.line_in)
+        Source.RADIO -> a.getString(R.string.radio)
+        Source.SERVER -> runCatching { URL(uri).host }.getOrNull()?.let { servers[it] } ?: ""
+        Source.TV, Source.OTHER -> "" // The title says TV already.
     }
 
     /**

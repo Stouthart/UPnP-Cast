@@ -1,4 +1,4 @@
-<!-- The launcher icon's ground: a diagonal gradient around the logo navy (icon_bg), the same in light and dark mode. -->
+<!-- The launcher icon's ground: a diagonal gradient in dark greys around icon_bg, the same in light and dark mode. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:aapt="http://schemas.android.com/aapt"
     android:width="108dp"
@@ -14,13 +14,13 @@
                 android:startY="0"
                 android:type="linear">
                 <item
-                    android:color="#FF2B6080"
+                    android:color="#FF3A3B3D"
                     android:offset="0" />
                 <item
                     android:color="@color/icon_bg"
                     android:offset="0.55" />
                 <item
-                    android:color="#FF0F2F40"
+                    android:color="#FF111213"
                     android:offset="1" />
             </gradient>
         </aapt:attr>

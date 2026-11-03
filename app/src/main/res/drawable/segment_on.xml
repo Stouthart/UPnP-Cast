@@ -1,6 +1,10 @@
-<!-- The chosen Appearance: the accent, like the buttons. -->
+<!-- A chosen choice: a light wash of the accent, its edge and its text, so it reads as chosen without looking like
+     an action button, which keeps the solid accent. -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android"
     android:shape="rectangle">
-    <solid android:color="@color/accent" />
+    <solid android:color="@color/chosen" />
+    <stroke
+        android:width="1.5dp"
+        android:color="@color/accent" />
     <corners android:radius="12dp" />
 </shape>

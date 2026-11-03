@@ -9,8 +9,19 @@ import java.io.IOException
 import java.io.StringReader
 import java.net.URL
 
-/** A Sonos room or group: every command goes to its coordinator, at [host] ("ip:port"). */
-class Room(val id: String, val name: String, val host: String)
+/**
+ * A Sonos room or group: playback and the queue go to its coordinator, at [host] ("ip:port"). [members]: the other
+ * visible players grouped with it; a group's mute is the group's. [own]: the room's own player, where it joins or
+ * leaves a group, and whose volume a room alone has. [players]: a group's players, coordinator included, which its
+ * volume sets one by one.
+ */
+class Room(
+    val id: String, val name: String, val host: String, val members: Int = 0, val own: String = host,
+    val players: List<String> = listOf(own),
+)
+
+/** The same group as [o]: the same coordinator and players; two nulls are the same, nothing to control. */
+fun Room?.same(o: Room?) = if (this == null) o == null else o != null && id == o.id && members == o.members && players == o.players
 
 /**
  * A media server: its name, the address it lives at, its ContentDirectory control URL and its icon. [library]: the
@@ -66,6 +77,52 @@ fun inSubnet(ip: ByteArray, net: ByteArray, prefix: Int): Boolean {
         if ((ip[i / 8].toInt() and m) != (net[i / 8].toInt() and m)) return false
     }
     return true
+}
+
+/** The kind of Sonos product a room's main player is, for its icon. */
+enum class Product { SOUNDBAR, SUB, PORTABLE, AMP, SPEAKER }
+
+/** The family in a model name, such as "Sonos Beam Ultra" or "Sonos Era 300"; any other is a speaker. */
+fun product(model: String): Product {
+    val m = model.lowercase()
+    return when {
+        listOf("beam", "arc", "ray", "playbar", "playbase").any { it in m } -> Product.SOUNDBAR
+        "sub" in m -> Product.SUB
+        "move" in m || "roam" in m -> Product.PORTABLE
+        "amp" in m || "port" in m || "connect" in m -> Product.AMP
+        else -> Product.SPEAKER
+    }
+}
+
+/** Where a room's music comes from, as the Sonos app names it; [SERVER]: a UPnP server's link. */
+enum class Source { HDMI, SPDIF, TV, SPOTIFY, AIRPLAY, LIBRARY, LINE_IN, RADIO, SERVER, OTHER }
+
+/**
+ * The source of what plays, by its URI, as the speaker reports it. The TV's input by the soundbar's [model]: the speaker
+ * names neither, and Beam, Arc and Amp connect by HDMI, Ray, Playbar and Playbase optically.
+ */
+fun source(uri: String, model: String = ""): Source {
+    val m = model.lowercase()
+    return when {
+        uri.startsWith("x-sonos-htastream:") -> when {
+            listOf("beam", "arc", "amp").any { it in m } -> Source.HDMI
+            listOf("ray", "playbar", "playbase").any { it in m } -> Source.SPDIF
+            else -> Source.TV
+        }
+        // A service streaming to the speaker itself, named after the comma: x-sonos-vli:<player>:2,spotify:<session>.
+        uri.startsWith("x-sonos-vli:") -> when (uri.substringAfter(',', "").substringBefore(':')) {
+            "spotify" -> Source.SPOTIFY
+            "airplay" -> Source.AIRPLAY
+            else -> Source.OTHER
+        }
+        uri.startsWith("x-sonos-spotify:") -> Source.SPOTIFY
+        uri.startsWith("x-file-cifs:") -> Source.LIBRARY
+        uri.startsWith("x-rincon-stream:") -> Source.LINE_IN
+        listOf("x-rincon-mp3radio:", "x-sonosapi-stream:", "x-sonosapi-radio:", "x-sonosapi-hls:", "aac:").any { uri.startsWith(it) } ->
+            Source.RADIO
+        uri.startsWith("http://") -> Source.SERVER
+        else -> Source.OTHER
+    }
 }
 
 private const val SONOS_PORT = 1400
@@ -135,24 +192,66 @@ object Upnp {
         return if (out.size > max) out.subList(0, max) else out
     }
 
+    /**
+     * The model of the player at [host] ("ip:port") as the Sonos app names it, such as "Era 300": its description's
+     * displayName, else its modelName without "Sonos "; "" without either. Only the player's own, not its parts'.
+     */
+    fun model(host: String): String {
+        val p = parser(Http.get("http://$host/xml/device_description.xml"))
+        var model = ""
+        while (p.next() != END_DOCUMENT) {
+            if (p.eventType != START_TAG) continue
+            when (p.name) {
+                "displayName" -> return p.nextText().trim()
+                "modelName" -> if (model.isEmpty()) model = p.nextText().trim()
+                "deviceList" -> break // Its media server and renderer follow, with no name of their own.
+            }
+        }
+        return model.removePrefix("Sonos ")
+    }
+
     /** "ip:port" names a Sonos player on the phone's WiFi. */
     private fun player(host: String): Boolean {
         val ip = host.substringBeforeLast(':')
         return host.substringAfterLast(':') == SONOS_PORT.toString() && literal(ip) && Lan.local(ip)
     }
 
-    /** Every visible room in the household, from any one player at [host]. */
-    fun rooms(host: String): List<Room> {
+    /**
+     * The household: its [groups] (a room on its own is a group of one), which the player controls; every room in
+     * [rooms], the rows to check; and the group each room is in ([groupOf]), by coordinator id.
+     */
+    class Topology(val groups: List<Room>, val rooms: List<Room>, val groupOf: Map<String, String>) {
+        /** The group the room [id] is in, or the first room's once it's gone: the one the player controls. */
+        fun group(id: String?): Room? {
+            val lead = groupOf[id] ?: groupOf[rooms.firstOrNull()?.id]
+            return groups.firstOrNull { it.id == lead }
+        }
+    }
+
+    private class Member(val id: String, val name: String, val host: String)
+
+    /** The household, from any one player at [host]. */
+    fun topology(host: String): Topology {
         val reply = Http.soap("http://$host/ZoneGroupTopology/Control", "ZoneGroupTopology", "GetZoneGroupState")
-        val p = Xml.newPullParser().apply { setInput(StringReader(noDtd(arg(reply, "ZoneGroupState") ?: return emptyList()))) }
+        val state = arg(reply, "ZoneGroupState") ?: return Topology(emptyList(), emptyList(), emptyMap())
+        val p = Xml.newPullParser().apply { setInput(StringReader(noDtd(state))) }
+        val groups = ArrayList<Room>()
         val rooms = ArrayList<Room>()
+        val groupOf = HashMap<String, String>()
+        val members = ArrayList<Member>()
         var coordinator = ""
         var name = ""
         var at = ""
-        var others = 0
         while (p.next() != END_DOCUMENT) {
             if (p.eventType == END_TAG && p.name == "ZoneGroup") {
-                if (at.isNotEmpty()) rooms += Room(coordinator, if (others == 0) name else "$name + $others", at)
+                if (at.isNotEmpty()) {
+                    val others = members.size - 1
+                    groups += Room(coordinator, if (others == 0) name else "$name + $others", at, others, at, members.map { it.host })
+                    for (m in members) {
+                        rooms += Room(m.id, m.name, at, 0, m.host)
+                        groupOf[m.id] = coordinator
+                    }
+                }
                 continue
             }
             if (p.eventType != START_TAG) continue
@@ -161,21 +260,23 @@ object Upnp {
                     coordinator = p.attr("Coordinator")
                     name = ""
                     at = ""
-                    others = 0
+                    members.clear()
                 }
-                // A bonded Sub or surround is an Invisible member, or a Satellite element inside one.
+                // A bonded Sub or surround is an Invisible member, or a Satellite element inside one. Only a player on
+                // this WiFi, at Sonos's port: the topology is the one list the SSDP check doesn't cover, and the
+                // players in it are asked every few seconds.
                 "ZoneGroupMember" -> if (p.attr("Invisible") != "1") {
-                    if (p.attr("UUID") != coordinator) others++
-                    // Only a player on this WiFi, at Sonos's port: the topology is the one list the SSDP check
-                    // doesn't cover, and the player is asked every few seconds.
-                    else hostOf(p.attr("Location"))?.takeIf { player(it) }?.let {
-                        at = it
-                        name = p.attr("ZoneName")
+                    val h = hostOf(p.attr("Location"))?.takeIf { player(it) } ?: continue
+                    val m = Member(p.attr("UUID"), p.attr("ZoneName"), h)
+                    members += m
+                    if (m.id == coordinator) {
+                        at = h
+                        name = m.name
                     }
                 }
             }
         }
-        return rooms.sortedBy { it.name }
+        return Topology(groups.sortedBy { it.name }, rooms.sortedBy { it.name }, groupOf)
     }
 
     /** The media server described at [location], or null when it has no ContentDirectory. */

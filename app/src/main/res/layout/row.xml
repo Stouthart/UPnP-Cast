@@ -56,7 +56,7 @@
         android:layout_marginStart="8dp"
         android:importantForAccessibility="no"
         android:src="@drawable/ic_check"
-        android:tint="@color/accent"
+        android:tint="@color/accent_text"
         android:visibility="gone" />
 
     <!-- A server opens: the same chevron as a folder in Browse. -->

@@ -37,6 +37,14 @@
             android:importantForAccessibility="no"
             android:scaleType="centerCrop" />
 
+        <!-- Keeps the controls and the Queue button at the bottom: room the cover can't take, once it's as wide as the
+             screen allows, goes here, between it and the title. -->
+        <View
+            android:id="@+id/spacer"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1" />
+
         <!-- Text and volume are inset 16dp: the SeekBars' own padding, so everything lines up with their tracks. -->
         <TextView
             android:id="@+id/player_title"
@@ -196,13 +204,6 @@
                 android:textColor="@color/text2"
                 android:textSize="15sp" />
         </LinearLayout>
-
-        <!-- Pushes the Queue button to the bottom when everything above fits; its height is the room to spare. -->
-        <View
-            android:id="@+id/spacer"
-            android:layout_width="match_parent"
-            android:layout_height="0dp"
-            android:layout_weight="1" />
 
         <TextView
             android:id="@+id/player_queue"
