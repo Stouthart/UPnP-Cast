@@ -42,6 +42,29 @@
                     style="@style/Summary" />
             </LinearLayout>
 
+            <!-- Plays the level's tracks from the top, as a tap on the first; only where there are tracks. -->
+            <ImageView
+                android:id="@+id/play"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:background="?android:attr/selectableItemBackgroundBorderless"
+                android:contentDescription="@string/play"
+                android:padding="8dp"
+                android:src="@drawable/ic_play"
+                android:tint="@color/accent"
+                android:visibility="gone" />
+
+            <!-- The Music library's top level only, which has no tracks and so no Play: Scan for new content. -->
+            <ImageView
+                android:id="@+id/scan"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:background="?android:attr/selectableItemBackgroundBorderless"
+                android:contentDescription="@string/scan"
+                android:padding="8dp"
+                android:src="@drawable/ic_refresh"
+                android:visibility="gone" />
+
             <!-- Back to the opening screen from any level; left of the toggle, which keeps its place. -->
             <ImageView
                 android:id="@+id/home"

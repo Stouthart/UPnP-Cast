@@ -1,8 +1,19 @@
-<!-- 1.1 - Copyright (C) 2026 Stouthart. All rights reserved. -->
+<!-- 1.2 - Copyright (C) 2026 Stouthart. All rights reserved. -->
 
 # Release notes
 
 Highlights per version, newest first.
+
+## 1.2 - November 2026
+
+- **Music library:** the Sonos system's own library, the shared folders its speakers play from, next to the UPnP/DLNA servers, with the Sonos app's sections: Artists, Albums, Composers, Genres, Songs, Imported playlists and Folders. **Scan for new content** on its first level picks up new files, such as fresh podcast episodes.
+- **Play in Browse:** on an album, or any level with tracks, **▶** in the top card plays them all from the first, the same as a tap on the first track.
+- **Volume buttons:** while UPnP Cast is in front, the phone's volume buttons set the room's volume, by the new **Volume button step** setting, ±1 to ±10 (±2 by default).
+- **The TV's input format** on Now Playing, such as `Dolby Atmos (MAT)` or `PCM 2.0`.
+- **Long titles** in Browse's top card get a little smaller to fit their two lines before they're cut short.
+- **Sturdier:** the volume stays with its room, also when you switch rooms mid-change or leave the screen; a tap in the Queue checks the queue hasn't changed elsewhere first; requests stay on the WiFi and go to addresses only; long or endless lists can't keep the app paging; nothing loads for a screen you left; seeking works in any language; Now Playing fits a small window; and the sliders follow a keyboard and TalkBack.
+- **Settings fold away:** a tap on the title opens or closes them; closed at first, then as you left them. Inside, a new order: Volume button step, Polling interval, Appearance.
+- **Buttons and choices at one height.**
 
 ## 1.1 - November 2026
 

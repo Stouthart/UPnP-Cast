@@ -5,6 +5,7 @@ import org.xmlpull.v1.XmlPullParser.END_DOCUMENT
 import org.xmlpull.v1.XmlPullParser.START_TAG
 import java.io.IOException
 import java.io.StringReader
+import java.util.Locale
 
 /** Where tracks go in the room's queue, in the Sonos app's terms. */
 enum class How { NOW, NEXT, END, REPLACE }
@@ -56,6 +57,9 @@ fun seconds(t: String?): Int {
 /** "1:46" or "1:02:03". */
 fun clock(s: Int) = if (s >= 3600) "%d:%02d:%02d".format(s / 3600, s / 60 % 60, s % 60) else "%d:%02d".format(s / 60, s % 60)
 
+/** "H:MM:SS" for the speaker: in ASCII digits whatever the phone's language, as Sonos reads no other. */
+fun hms(s: Int) = "%d:%02d:%02d".format(Locale.ROOT, s / 3600, s / 60 % 60, s % 60)
+
 /** The room's queue and transport, always on its coordinator; the speaker fetches each track from the server itself. */
 object Sonos {
     private const val BATCH = 16 // The most AddMultipleURIsToQueue takes per call.
@@ -92,7 +96,7 @@ object Sonos {
     }
 
     fun seek(r: Room, s: Int) {
-        avt(r, "Seek", "<Unit>REL_TIME</Unit><Target>%d:%02d:%02d</Target>".format(s / 3600, s / 60 % 60, s % 60))
+        avt(r, "Seek", "<Unit>REL_TIME</Unit><Target>${hms(s)}</Target>")
     }
 
     fun volume(r: Room) = Upnp.arg(rc(r, "GetVolume", ""), "CurrentVolume")?.toIntOrNull() ?: -1
@@ -112,6 +116,25 @@ object Sonos {
 
     fun mode(r: Room, m: Mode) {
         avt(r, "SetPlayMode", "<NewPlayMode>${m.upnp}</NewPlayMode>")
+    }
+
+    // The TV input's formats, by the HTAudioIn code in the player's zone info.
+    private val TV = mapOf(
+        0 to "No input connected", 2 to "Stereo", 7 to "Dolby Digital 2.0", 18 to "Dolby Digital 5.1", 21 to "No input",
+        22 to "No audio", 59 to "Dolby Atmos (DD+)", 61 to "Dolby Atmos (TrueHD)", 63 to "Dolby Atmos (MAT)",
+        33554434 to "PCM 2.0", 33554454 to "PCM 2.0 no audio", 33554488 to "Dolby Digital 2.0",
+        33554490 to "Dolby Digital Plus 2.0", 33554492 to "Dolby TrueHD 2.0", 33554494 to "Dolby Multichannel PCM 2.0",
+        84934658 to "Multichannel PCM 5.1", 84934713 to "Dolby Digital 5.1", 84934714 to "Dolby Digital Plus 5.1",
+        84934716 to "Dolby TrueHD 5.1", 84934718 to "Dolby Multichannel PCM 5.1", 84934721 to "DTS 5.1",
+        118489090 to "Multichannel PCM 7.1", 118489146 to "Dolby Digital Plus 7.1", 118489148 to "Dolby TrueHD 7.1",
+    )
+
+    /** The format the TV sends, such as Dolby Atmos (MAT); a code not in the list shows as a number, nonsense as nothing. */
+    fun tvFormat(r: Room): String {
+        val code = Upnp.arg(Http.soap("http://${r.host}/DeviceProperties/Control", "DeviceProperties", "GetZoneInfo"), "HTAudioIn")
+            ?.trim() ?: return ""
+        if (code.isEmpty() || code.length > 10 || !code.all { it in '0'..'9' }) return ""
+        return code.toIntOrNull()?.let { TV[it] } ?: "Format $code"
     }
 
     fun position(r: Room): Position {
@@ -192,18 +215,36 @@ object Sonos {
         avt(r, "RemoveAllTracksFromQueue")
     }
 
+    /** Starts the music library's Scan for new content on the player at [control]; it scans by itself. */
+    fun scan(control: String) {
+        // Empty: the library keeps its own album artist setting.
+        Http.soap(control, "ContentDirectory", "RefreshShareIndex", "<AlbumArtistDisplayOption></AlbumArtistDisplayOption>")
+    }
+
+    /** Whether the music library is being scanned, from here or elsewhere. */
+    fun scanning(control: String) = Upnp.arg(Http.soap(control, "ContentDirectory", "GetShareIndexInProgress"), "IsIndexing") == "1"
+
     /** The room's queue over all its pages; [url] vets each cover and track URL, as for a server. */
     fun queue(r: Room, url: (String) -> String?): List<Entry> {
         val out = ArrayList<Entry>()
         var start = 0
-        while (out.size < 10_000) {
-            val p = Upnp.browse("http://${r.host}/MediaServer/ContentDirectory/Control", url, "Q:0", start, QUEUE_PAGE)
+        var pages = 0
+        // Up to 10,000 tracks in at most 200 pages, and only forward: a page of nothing, or a negative count, ends it.
+        while (out.size < 10_000 && pages++ < 200) {
+            val p = Upnp.browse(contentDirectory(r), url, "Q:0", start, QUEUE_PAGE)
             out += p.entries
+            if (p.returned <= 0) break
             start += p.returned
-            if (p.returned == 0 || start >= p.total) break
+            if (start >= p.total) break
         }
         return out
     }
+
+    /** The queue's track at index [n] (0-based) as it is now: a tap on the Queue screen checks it still is the one. */
+    fun queueItem(r: Room, n: Int, url: (String) -> String?) =
+        Upnp.browse(contentDirectory(r), url, "Q:0", n, 1).entries.firstOrNull()
+
+    private fun contentDirectory(r: Room) = "http://${r.host}/MediaServer/ContentDirectory/Control"
 
     /** Adds [tracks] at queue position [at] (0 = the end); returns the position of the first one. */
     private fun add(r: Room, tracks: List<Entry>, at: Int, next: Boolean): Int {

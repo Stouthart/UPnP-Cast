@@ -8,6 +8,7 @@ import android.content.pm.PackageManager.PERMISSION_GRANTED
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Paint
+import android.graphics.Rect
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -15,6 +16,7 @@ import android.os.SystemClock
 import android.provider.Settings
 import android.util.Log
 import android.util.TypedValue
+import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup
 import android.widget.ImageView
@@ -60,6 +62,7 @@ class MainActivity : Activity() {
     private var gen = 0 // Drops results from a search that a newer one, or onStop, has overtaken.
     private var found: List<Room> = emptyList()
     private var room: Room? = null // The selected room: the remembered one if it's still there, else the first.
+    private var library: View? = null // The Music library row, kept after the servers whatever order they answer in.
 
     @SuppressLint("InlinedApi") // ACCESS_LOCAL_NETWORK is Android 17's; before, lanAllowed() is true and it's never used.
     override fun onCreate(b: Bundle?) {
@@ -82,14 +85,45 @@ class MainActivity : Activity() {
         }
         if (!lanAllowed()) requestPermissions(arrayOf(ACCESS_LOCAL_NETWORK), 0)
         settings()
+        fold()
     }
 
-    /** Appearance (Android recreates the screens in the new mode) and the Polling interval (applies at once). */
+    /** The Settings card opens and closes with a tap on its title: closed at first, then as it was left. */
+    private fun fold() {
+        val header: View = findViewById(R.id.settings_header)
+        val body: View = findViewById(R.id.settings_body)
+        val chevron: View = findViewById(R.id.settings_chevron)
+        fun open(o: Boolean) {
+            body.shown = o
+            header.stateDescription = getString(if (o) R.string.expanded else R.string.collapsed)
+        }
+        open(Prefs.open(this))
+        chevron.rotation = if (body.shown) 180f else 0f
+        header.setOnClickListener {
+            val o = !body.shown
+            Prefs.open(this, o)
+            open(o)
+            chevron.animate().rotation(if (o) 180f else 0f).duration = 200
+            // Once laid out, scrolled into view: the card is the last on the screen, so it opens below the fold.
+            if (o) body.addOnLayoutChangeListener(object : View.OnLayoutChangeListener {
+                override fun onLayoutChange(v: View, l: Int, t: Int, r: Int, b: Int, ol: Int, ot: Int, or: Int, ob: Int) {
+                    v.removeOnLayoutChangeListener(this)
+                    v.post { v.requestRectangleOnScreen(Rect(0, 0, v.width, v.height), false) }
+                }
+            })
+        }
+    }
+
+    /**
+     * Appearance (Android recreates the screens in the new mode), the Volume button step (the next press uses it) and
+     * the Polling interval (applies at once).
+     */
     private fun settings() {
         val choices = arrayOf<TextView>(findViewById(R.id.appearance_system), findViewById(R.id.appearance_light), findViewById(R.id.appearance_dark))
         fun mark() {
             val chosen = Prefs.appearance(this)
             for ((i, v) in choices.withIndex()) {
+                v.isSelected = i == chosen // TalkBack says "Selected" on the chosen one.
                 v.setBackgroundResource(if (i == chosen) R.drawable.segment_on else R.drawable.segment)
                 v.setTextColor(getColor(if (i == chosen) R.color.on_accent else R.color.text))
             }
@@ -115,23 +149,51 @@ class MainActivity : Activity() {
             t.post { for (c in choices) c.setTextSize(TypedValue.COMPLEX_UNIT_SP, sp) } // Not inside the layout pass.
         }
 
-        val poll: SeekBar = findViewById(R.id.poll)
-        val value: TextView = findViewById(R.id.poll_value)
-        poll.progress = Prefs.poll(this) - 1
-        value.text = getString(R.string.seconds, poll.progress + 1)
-        poll.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+        val step: SeekBar = findViewById(R.id.step)
+        val stepValue: TextView = findViewById(R.id.step_value)
+        step.progress = Prefs.step(this) - 1
+        stepValue.text = getString(R.string.step, step.progress + 1)
+        // Saved with every change the user makes, so a key or TalkBack counts as much as a drag.
+        step.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(s: SeekBar, p: Int, user: Boolean) {
-                value.text = getString(R.string.seconds, p + 1)
+                stepValue.text = getString(R.string.step, p + 1)
+                if (user) Prefs.step(this@MainActivity, p + 1)
             }
 
             override fun onStartTrackingTouch(s: SeekBar) = Unit
 
+            override fun onStopTrackingTouch(s: SeekBar) = Unit
+        })
+
+        val poll: SeekBar = findViewById(R.id.poll)
+        val value: TextView = findViewById(R.id.poll_value)
+        poll.progress = Prefs.poll(this) - 1
+        value.text = getString(R.string.seconds, poll.progress + 1)
+        // A drag applies on release, as it restarts the player; a key or TalkBack with each step.
+        poll.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            private var dragging = false
+
+            override fun onProgressChanged(s: SeekBar, p: Int, user: Boolean) {
+                value.text = getString(R.string.seconds, p + 1)
+                if (user && !dragging) interval(p + 1)
+            }
+
+            override fun onStartTrackingTouch(s: SeekBar) {
+                dragging = true
+            }
+
             override fun onStopTrackingTouch(s: SeekBar) {
-                Prefs.poll(this@MainActivity, s.progress + 1)
-                player.stop() // The mini player here picks up the new interval now; other screens when they open.
-                player.start()
+                dragging = false
+                interval(s.progress + 1)
             }
         })
+    }
+
+    /** A new Polling interval: the mini player here picks it up now; other screens when they open. */
+    private fun interval(s: Int) {
+        Prefs.poll(this, s)
+        player.stop()
+        player.start()
     }
 
     override fun onStart() {
@@ -154,6 +216,9 @@ class MainActivity : Activity() {
 
     override fun onRequestPermissionsResult(code: Int, permissions: Array<String>, results: IntArray) = search()
 
+    // The volume buttons set the room's volume while this screen is in front, once the mini player shows.
+    override fun dispatchKeyEvent(e: KeyEvent) = player.key(e) || super.dispatchKeyEvent(e)
+
     /** Android 16 and older don't know the permission, and don't need it. */
     private fun lanAllowed() = Build.VERSION.SDK_INT < 37 || checkSelfPermission(ACCESS_LOCAL_NETWORK) == PERMISSION_GRANTED
 
@@ -164,6 +229,7 @@ class MainActivity : Activity() {
         rooms.shown = false
         servers.removeAllViews()
         servers.shown = false
+        library = null
         allow.shown = !lanAllowed()
         if (allow.shown) {
             roomsSummary.setText(R.string.lan_needed)
@@ -209,6 +275,18 @@ class MainActivity : Activity() {
                 prefs.edit().putString(KEY_SONOS, location).apply()
                 val ms = SystemClock.elapsedRealtime() - t0
                 runOnUiThread { if (g == gen) showRooms(r, ms) }
+                // The household's music library, the same from any player: listed once it has a share.
+                val lib = try {
+                    Upnp.server(location)?.let { Server(it.udn, getString(R.string.music_library), it.host, it.control, it.icon, true) }
+                } catch (e: Exception) {
+                    Log.i(TAG, "No library at $location: $e")
+                    null
+                } ?: return@task
+                val shares = runCatching { Upnp.browse(lib, "S:", 0, 20).entries }.getOrNull()
+                if (shares.isNullOrEmpty()) return@task
+                val bmp = lib.icon?.let { runCatching { icon(Http.get(it)) }.getOrNull() }
+                val at = SystemClock.elapsedRealtime() - t0
+                runOnUiThread { if (g == gen) addServer(lib, bmp, at, shares.joinToString(" · ") { it.title }) }
             }
         }
 
@@ -235,7 +313,7 @@ class MainActivity : Activity() {
             try {
                 Ssdp.search(arrayOf(Ssdp.SONOS, Ssdp.SERVER), SEARCH_MS) { a ->
                     if (a.st == Ssdp.SONOS) sonos(a.location)
-                    else if (!a.usn.startsWith("uuid:RINCON_")) server(a.location) // Not the Sonos's own music library.
+                    else if (!a.usn.startsWith("uuid:RINCON_")) server(a.location) // A player's library comes once, above.
                 }
             } catch (e: Exception) {
                 Log.i(TAG, "SSDP failed: $e")
@@ -285,16 +363,18 @@ class MainActivity : Activity() {
         for (i in found.indices) rooms.getChildAt(i).findViewById<View>(R.id.check).shown = found[i] === room
     }
 
-    private fun addServer(s: Server, bmp: Bitmap?, ms: Long) {
+    /** A server's row, or the Music library's, which says its shares in place of an address and stays last. */
+    private fun addServer(s: Server, bmp: Bitmap?, ms: Long, meta: String = s.host) {
         Log.i(TAG, "${s.name} in $ms ms")
         player.hosts += s.host // Its covers may show in the player.
-        servers.addView(row(servers, s.name, s.host, bmp).apply {
+        val v = row(servers, s.name, meta, bmp).apply {
             findViewById<View>(R.id.chevron).shown = true
             setOnClickListener {
                 val i = Intent(this@MainActivity, BrowseActivity::class.java)
                     .putExtra(BrowseActivity.CONTROL, s.control)
                     .putExtra(BrowseActivity.HOST, s.host)
                     .putExtra(BrowseActivity.NAME, s.name)
+                    .putExtra(BrowseActivity.LIBRARY, s.library)
                 room?.let {
                     i.putExtra(BrowseActivity.ROOM_ID, it.id)
                         .putExtra(BrowseActivity.ROOM_NAME, it.name)
@@ -302,7 +382,13 @@ class MainActivity : Activity() {
                 }
                 startActivity(i)
             }
-        })
+        }
+        if (s.library) {
+            library = v
+            servers.addView(v)
+        } else {
+            servers.addView(v, servers.childCount - if (library == null) 0 else 1)
+        }
         servers.shown = true
         val n = servers.childCount
         serversSummary.text = resources.getQuantityString(R.plurals.server_count, n, n)

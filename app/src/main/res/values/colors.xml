@@ -1,6 +1,6 @@
 <resources>
-    <!-- Stouthart's palette, from the company logo (light); values-night has the dark one. The same two files serve
-         LDAC Lock. The logo's ramp: #154056/#5797C2, #2B495B/#7EABCE, #3E5361/#A6C2DA, #4F5E67/#CFDFE9.
+    <!-- Stouthart's palette, from the company logo (light); values-night has the dark one. The logo's ramp:
+         #154056/#5797C2, #2B495B/#7EABCE, #3E5361/#A6C2DA, #4F5E67/#CFDFE9.
          Every text colour is at least 4.5:1 on what it sits on. Surfaces and the accent are blue; text is neutral,
          so the accent stands out from it (a navy text made the accent unreadable as a highlight). -->
     <color name="bg">#FFF4F8FB</color>

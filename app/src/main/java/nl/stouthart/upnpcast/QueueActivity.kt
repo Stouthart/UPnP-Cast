@@ -4,6 +4,7 @@ import android.app.Activity
 import android.app.AlertDialog
 import android.os.Bundle
 import android.util.Log
+import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup
 import android.widget.BaseAdapter
@@ -29,7 +30,8 @@ class QueueActivity : Activity() {
     private lateinit var summary: TextView
     private lateinit var clear: View
     private lateinit var art: Art
-    private val work = Executors.newSingleThreadExecutor() // Loads and commands, in the order asked.
+    private val work = Executors.newSingleThreadExecutor() // Loads, in the order asked.
+    private val sonos = Executors.newSingleThreadExecutor() // Jump and Clear queue: never waiting behind a long load.
     private var items: List<Entry> = emptyList()
     private var current = -1 // The playing track's row, or -1 while the room plays something else.
     private var gen = 0 // Drops a load that a newer one, or onStop, has overtaken.
@@ -101,13 +103,18 @@ class QueueActivity : Activity() {
     override fun onStop() {
         gen++
         player.stop()
+        art.pause() // load() at the next start asks again.
         super.onStop()
     }
+
+    // The volume buttons set the room's volume while this screen is in front.
+    override fun dispatchKeyEvent(e: KeyEvent) = player.key(e) || super.dispatchKeyEvent(e)
 
     override fun onDestroy() {
         art.stop()
         player.destroy()
         work.shutdown()
+        sonos.shutdown() // A command already sent still finishes: the user asked for it.
         super.onDestroy()
     }
 
@@ -149,8 +156,15 @@ class QueueActivity : Activity() {
     private fun jump(n: Int) {
         val e = items[n]
         mark(n) // At once; the player's next answer confirms it.
-        later(work) {
+        later(sonos) {
             try {
+                // A jump goes to a position, and the queue may have changed elsewhere since it was read: first the track
+                // there is checked to be this one; if it isn't, the list is read again instead (~15 ms).
+                val now = Sonos.queueItem(room, n) { player.cover(room, it) }
+                if (now == null || now.title != e.title || now.artist != e.artist || now.album != e.album) {
+                    runOnUiThread { if (!isDestroyed) load() }
+                    return@later
+                }
                 Sonos.jump(room, n + 1)
             } catch (x: Exception) {
                 Log.i(TAG, "Jump to ${n + 1} on ${room.name}: $x")
@@ -161,7 +175,7 @@ class QueueActivity : Activity() {
     }
 
     private fun clear() {
-        later(work) {
+        later(sonos) {
             try {
                 Sonos.clear(room)
             } catch (x: Exception) {

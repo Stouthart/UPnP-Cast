@@ -7,6 +7,19 @@
     <string name="searching">Searching for nearby products, make sure they\'re powered on…</string>
     <string name="no_rooms">We can\'t find a Sonos system on your mobile device\'s network. Make sure your system is powered on and connected to the same network.</string>
     <string name="no_servers">No UPnP/DLNA servers found</string>
+    <!-- The Sonos music library, with the Sonos app's sections in its order. -->
+    <string name="music_library">Music library</string>
+    <string name="artists">Artists</string>
+    <string name="albums">Albums</string>
+    <string name="composers">Composers</string>
+    <string name="genres">Genres</string>
+    <string name="songs">Songs</string>
+    <string name="imported_playlists">Imported playlists</string>
+    <string name="folders">Folders</string>
+    <string name="scan">Scan for new content</string>
+    <string name="scanning">Scanning for new content…</string>
+    <string name="scan_complete">Scanning for new content is complete.</string>
+    <string name="scan_error">Couldn\'t complete music library scan.</string>
     <plurals name="room_count">
         <item quantity="one">%1$d room</item>
         <item quantity="other">%1$d rooms</item>
@@ -61,10 +74,14 @@
     <string name="cant_play_reach">Couldn\'t play %1$s. Couldn\'t connect to %2$s.</string>
 
     <string name="settings">Settings</string>
+    <string name="expanded">Expanded</string> <!-- The Settings card's state, for TalkBack. -->
+    <string name="collapsed">Collapsed</string>
     <string name="appearance">Appearance</string>
     <string name="system_default">System default</string>
     <string name="light_mode">Light mode</string>
     <string name="dark_mode">Dark mode</string>
+    <string name="volume_step">Volume button step</string> <!-- UAPP's "volume button"; Sonos has no such setting. -->
+    <string name="step">±%1$d</string>
     <string name="polling">Polling interval</string>
     <string name="seconds">%1$d s</string>
 

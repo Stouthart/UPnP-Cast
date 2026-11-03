@@ -3,7 +3,11 @@ package nl.stouthart.upnpcast
 import android.app.Activity
 import android.os.Bundle
 import android.os.SystemClock
+import android.text.StaticLayout
+import android.text.TextPaint
 import android.util.Log
+import android.util.TypedValue
+import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup
 import android.widget.BaseAdapter
@@ -19,10 +23,12 @@ import java.util.concurrent.Executors
 private const val TAG = "UPnPCast"
 private const val PAGE = 200 // The first page shows at once; the rest follow while the list is already usable.
 private const val MAX_ITEMS = 50_000 // A server that never stops paging can't fill memory.
+private const val MAX_PAGES = 1000 // Nor keep it going with a few entries a page.
 private const val MAX_QUEUE = 500 // Tracks per command: an album at once, and a long list in a window from the tap.
 private const val KEY_TILES = "tiles" // The list or tiles, for every server and level.
 private const val TILE_DP = 150 // The tile size aimed at, rounded to whole columns: 4 on the Astra, 3 on the S25.
 private const val GAP_DP = 12
+private const val SCAN_POLL_MS = 1000L // How often a scan is checked; the speaker answers in ~10 ms.
 
 /** One server's tree, a level at a time; Back goes up a level, and leaves at the top. */
 class BrowseActivity : Activity() {
@@ -30,6 +36,7 @@ class BrowseActivity : Activity() {
         const val CONTROL = "control"
         const val HOST = "host"
         const val NAME = "name"
+        const val LIBRARY = "library"
         const val ROOM_ID = "room_id"
         const val ROOM_NAME = "room_name"
         const val ROOM_HOST = "room_host"
@@ -39,8 +46,10 @@ class BrowseActivity : Activity() {
         val items = ArrayList<Entry>()
         var total = -1 // Unknown until the first page.
         var error: String? = null
-        var resume = 0 // Where paging stopped at the error: a retry goes on from there.
+        var resume = 0 // Where paging stopped, at an error or when the screen did: it goes on from there.
         var alive = true // False once Back leaves it: its remaining pages are not fetched.
+        var paging = false // A load is out for it (main thread only).
+        var done = false // All its pages are in.
         var pos = 0 // The scroll position, restored on the way back up.
         var top = 0
     }
@@ -59,6 +68,11 @@ class BrowseActivity : Activity() {
     private lateinit var title: TextView
     private lateinit var summary: TextView
     private lateinit var list: GridView
+    private lateinit var play: View
+    private lateinit var scan: View
+    private var scanning = false // A scan of the Music library is being followed: main thread only.
+    @Volatile
+    private var started = false // The screen shows: a scan is followed only then, nothing runs behind it.
     private lateinit var viewType: ImageView
     private lateinit var art: Art // List thumbnails.
     private var tileArt: Art? = null // Tile covers, decoded at the tile's size; made when tiles first show.
@@ -145,7 +159,7 @@ class BrowseActivity : Activity() {
         server = Server(
             "", i.getStringExtra(NAME) ?: "",
             i.getStringExtra(HOST) ?: return finish(),
-            i.getStringExtra(CONTROL) ?: return finish(), null,
+            i.getStringExtra(CONTROL) ?: return finish(), null, i.getBooleanExtra(LIBRARY, false),
         )
         val id = i.getStringExtra(ROOM_ID)
         val host = i.getStringExtra(ROOM_HOST)
@@ -154,9 +168,13 @@ class BrowseActivity : Activity() {
         title = findViewById(R.id.title)
         summary = findViewById(R.id.summary)
         list = findViewById(R.id.list)
+        play = findViewById(R.id.play)
+        scan = findViewById(R.id.scan)
         viewType = findViewById(R.id.view_type)
         art = Art((48 * resources.displayMetrics.density).toInt()) { url -> loaded(art, url) }
         layout(prefs.getBoolean(KEY_TILES, false))
+        play.setOnClickListener { tracks().takeIf { it.isNotEmpty() }?.let { send(it.take(MAX_QUEUE), How.REPLACE, 0, level.title) } }
+        scan.setOnClickListener { scan() }
         findViewById<View>(R.id.home).setOnClickListener { finish() } // The opening screen is right below.
         viewType.setOnClickListener {
             layout(!tiles)
@@ -165,25 +183,49 @@ class BrowseActivity : Activity() {
         list.addOnLayoutChangeListener { _, l, _, r, _, ol, _, or, _ ->
             if (tiles && r - l != or - ol) list.post { layout(true) } // Not inside the layout pass itself.
         }
+        // A new width, as when Play shows or hides, or after rotating: the title's size again.
+        title.addOnLayoutChangeListener { _, l, _, r, _, ol, _, or, _ -> if (r - l != or - ol) title.post { fit() } }
         list.setOnItemClickListener { _, _, n, _ -> click(level.items[n]) }
         player = Player(this).apply {
             hosts += server.host
             room = this@BrowseActivity.room
             onNetwork = { retry() }
         }
-        open(Level("0", server.name))
+        open(if (server.library) sections() else Level("0", server.name))
+    }
+
+    /**
+     * The Music library's top level, as the Sonos app shows it: the player's own root names its parts Attributes
+     * and Music Shares, and holds the queues, favorites and radio as well.
+     */
+    private fun sections() = Level("0", server.name).apply {
+        val ids = arrayOf("A:ALBUMARTIST", "A:ALBUM", "A:COMPOSER", "A:GENRE", "A:TRACKS", "A:PLAYLISTS", "S:")
+        val names = intArrayOf(
+            R.string.artists, R.string.albums, R.string.composers, R.string.genres, R.string.songs,
+            R.string.imported_playlists, R.string.folders,
+        )
+        for (n in ids.indices) items += Entry(ids[n], getString(names[n]), true, "object.container", "", "", null, -1, null)
+        total = items.size
+        done = true
     }
 
     override fun onStart() {
         super.onStart()
+        started = true
         player.start()
         retry() // WiFi may have come back while the screen was away.
     }
 
     override fun onStop() {
+        started = false // Paging stops after the page it's on; retry() at the next start goes on from there.
         player.stop()
+        art.pause()
+        tileArt?.pause()
         super.onStop()
     }
+
+    // The volume buttons set the room's volume while this screen is in front.
+    override fun dispatchKeyEvent(e: KeyEvent) = player.key(e) || super.dispatchKeyEvent(e)
 
     override fun onDestroy() {
         for (l in stack) l.alive = false
@@ -198,12 +240,45 @@ class BrowseActivity : Activity() {
     // The app's context: a message that lands after the screen closed doesn't keep the screen alive.
     private fun toast(text: String) = Toast.makeText(applicationContext, text, Toast.LENGTH_LONG).show()
 
+    /**
+     * The Music library's Scan for new content, as in the Sonos app: one that already runs is followed, not restarted.
+     * The speaker scans by itself; the screen follows it while it shows, and says when it's done.
+     */
+    private fun scan() {
+        if (scanning) return
+        scanning = true
+        scan.isEnabled = false
+        scan.alpha = 0.5f
+        summary()
+        later(pool) {
+            val done = runCatching {
+                if (!Sonos.scanning(server.control)) Sonos.scan(server.control)
+                do Thread.sleep(SCAN_POLL_MS) while (started && Sonos.scanning(server.control))
+                started // Else the screen left first: no word on it.
+            }
+            runOnUiThread {
+                if (isDestroyed) return@runOnUiThread
+                scanning = false
+                scan.isEnabled = true
+                scan.alpha = 1f
+                summary()
+                done.onSuccess { if (it) toast(getString(R.string.scan_complete)) }.onFailure {
+                    Log.i(TAG, "Scan on ${server.host}: $it")
+                    toast(if (Lan.wifi == null) getString(R.string.no_wifi) else getString(R.string.scan_error))
+                }
+            }
+        }
+    }
+
+    /** The level's tracks that can play: what a tap queues around itself, and what Play plays from the top. */
+    private fun tracks() = level.items.filter { !it.container && it.playable }
+
     /** A container opens; a track plays with the rest of this level queued around it, as in an album. */
     private fun click(e: Entry) {
         if (e.container) return open(Level(e.id, e.title))
         val r = e.res ?: return
         if (!e.playable) return toast(getString(R.string.unsupported_rate, e.title, r.hz.toString()))
-        val tracks = level.items.filter { !it.container && it.playable }
+        val tracks = tracks()
         val k = tracks.indexOf(e)
         if (tracks.size <= MAX_QUEUE) send(tracks, How.REPLACE, k, e.title)
         else send(tracks.subList(k, minOf(k + MAX_QUEUE, tracks.size)), How.REPLACE, 0, e.title)
@@ -259,7 +334,7 @@ class BrowseActivity : Activity() {
         stack += l
         show()
         list.setSelection(0)
-        load(l)
+        if (!l.done) load(l) // The Music library's sections are already there.
     }
 
     private fun up() {
@@ -271,6 +346,7 @@ class BrowseActivity : Activity() {
     private fun show() {
         title.text = level.title
         summary()
+        fit()
         adapter.notifyDataSetChanged()
         val want = stack.size > 1
         if (want == backing) return
@@ -279,9 +355,36 @@ class BrowseActivity : Activity() {
         backing = want
     }
 
+    /**
+     * The title at the largest size, from the Title style's 20sp down to 16, at which it fits its two lines; a longer
+     * one ends in "…" at 16. In code: autosize keeps a shrunk size when a wrap_content title gets a shorter text.
+     */
+    private fun fit() {
+        val w = title.width - title.paddingLeft - title.paddingRight
+        if (w <= 0) return // Not laid out yet; the layout listener comes back.
+        val text = title.text
+        val paint = TextPaint(title.paint)
+        var sp = 20
+        while (sp > 16) {
+            paint.textSize = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, sp.toFloat(), resources.displayMetrics)
+            val lines = StaticLayout.Builder.obtain(text, 0, text.length, paint, w)
+                .setBreakStrategy(title.breakStrategy) // Breaks lines as the title itself does.
+                .setHyphenationFrequency(title.hyphenationFrequency)
+                .build().lineCount
+            if (lines <= 2) break
+            sp--
+        }
+        title.setTextSize(TypedValue.COMPLEX_UNIT_SP, sp.toFloat())
+    }
+
+    /** The count line, and Play once the level shows a track that can play; both follow each page and error. */
     private fun summary() {
         val l = level
+        val top = server.library && stack.size == 1
+        play.visibility = if (l.items.any { !it.container && it.playable }) View.VISIBLE else View.GONE
+        scan.visibility = if (top) View.VISIBLE else View.GONE
         summary.text = when {
+            top && scanning -> getString(R.string.scanning)
             l.error != null -> l.error
             l.total < 0 -> getString(R.string.loading)
             l.items.isNotEmpty() && l.items.none { it.container } -> resources.getQuantityString(R.plurals.track_count, l.total, l.total)
@@ -289,46 +392,82 @@ class BrowseActivity : Activity() {
         }
     }
 
-    /** With WiFi, once it came back or the screen shows again: the levels and covers that failed, once more. */
+    /**
+     * When WiFi came back or the screen shows again: the levels and covers that failed or stopped, once more, and the
+     * levels not loaded yet.
+     */
     private fun retry() {
-        if (Lan.wifi == null) return
-        if (art.retry() or (tileArt?.retry() == true)) adapter.notifyDataSetChanged()
+        val wifi = Lan.wifi != null
+        if (wifi && (art.retry() or (tileArt?.retry() == true))) adapter.notifyDataSetChanged()
         val shown = level.error != null
-        for (l in stack) if (l.error != null) {
+        // With WiFi, the levels that failed; always, those not loaded or whose paging stopped with the screen. Without
+        // WiFi that load fails at once, and the summary says why.
+        for (l in stack) if ((wifi && l.error != null) || (l.error == null && !l.done && !l.paging)) {
             l.error = null
             load(l, l.resume)
         }
         if (shown) summary() // Loading…, or the count so far when paging stopped halfway.
     }
 
-    /** Fetches [l]'s pages in order from [from], each shown as it arrives, until all are in or Back has left the level. */
-    private fun load(l: Level, from: Int = 0) = later(pool) {
-        var start = from
-        while (l.alive) {
-            val page = try {
-                Upnp.browse(server, l.id, start, PAGE)
-            } catch (e: Exception) {
-                Log.i(TAG, "Browse ${l.id} at $start: $e")
-                val at = start
+    /**
+     * Fetches [l]'s pages in order from [from], each shown as it arrives, until all are in, Back has left the level,
+     * or the screen stopped: nothing fetches for a screen that isn't shown, and retry() at the next start goes on.
+     */
+    private fun load(l: Level, from: Int = 0) {
+        if (!started) return // Before the first start, as from onCreate: onStart's retry() begins it.
+        l.paging = true
+        later(pool) {
+            var start = from
+            var pages = 0
+            while (l.alive) {
+                if (!started) {
+                    val at = start
+                    runOnUiThread { paused(l, at) }
+                    return@later
+                }
+                val page = try {
+                    Upnp.browse(server, l.id, start, PAGE)
+                } catch (e: Exception) {
+                    Log.i(TAG, "Browse ${l.id} at $start: $e")
+                    val at = start
+                    runOnUiThread {
+                        l.error = unreachable(server.name)
+                        l.resume = at
+                        l.paging = false
+                        if (l === level) summary()
+                    }
+                    return@later
+                }
+                for (e in page.entries) e.meta = meta(resources, e)
                 runOnUiThread {
-                    l.error = unreachable(server.name)
-                    l.resume = at
-                    if (l === level) summary()
+                    if (!l.alive) return@runOnUiThread
+                    l.items += page.entries
+                    l.total = page.total
+                    if (l === level) {
+                        adapter.notifyDataSetChanged()
+                        summary()
+                    }
                 }
-                return@later
-            }
-            for (e in page.entries) e.meta = meta(resources, e)
-            runOnUiThread {
-                if (!l.alive) return@runOnUiThread
-                l.items += page.entries
-                l.total = page.total
-                if (l === level) {
-                    adapter.notifyDataSetChanged()
-                    summary()
+                // Only forward and within bounds: a page of nothing or a negative count ends it, as do MAX_ITEMS
+                // entries or MAX_PAGES pages, so a server can't keep it going.
+                val end = page.returned <= 0 || start + page.returned >= page.total ||
+                    start + page.returned >= MAX_ITEMS || ++pages >= MAX_PAGES
+                start += maxOf(page.returned, 0)
+                if (end) {
+                    runOnUiThread {
+                        l.done = true
+                        l.paging = false
+                    }
+                    return@later
                 }
             }
-            start += page.returned
-            if (page.returned == 0 || start >= page.total || start >= MAX_ITEMS) return@later
         }
+    }
+
+    /** Paging stopped with the screen at [at]; started again before this landed, it goes on at once. */
+    private fun paused(l: Level, at: Int) {
+        l.resume = at
+        l.paging = false
+        if (started && l.alive) load(l, at)
     }
 }

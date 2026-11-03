@@ -12,8 +12,8 @@ android {
         applicationId = "nl.stouthart.upnpcast"
         minSdk = 34 // Android 14; tested on 16 (RedMagic Astra) and 17 (S25 Edge).
         targetSdk = 37
-        versionCode = 3 // Keeps counting up: the phones carried the internal 0.1 builds as 1.
-        versionName = "1.1"
+        versionCode = 5 // Keeps counting up: the phones carried the internal 0.1 builds as 1.
+        versionName = "1.2"
     }
 
     buildTypes {
@@ -33,4 +33,8 @@ android {
         includeInApk = false
         includeInBundle = false
     }
+}
+
+dependencies {
+    testImplementation("junit:junit:4.13.2") // The guard tests only: nothing of it reaches the APK.
 }

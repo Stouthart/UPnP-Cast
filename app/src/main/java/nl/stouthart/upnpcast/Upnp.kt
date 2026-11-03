@@ -12,8 +12,14 @@ import java.net.URL
 /** A Sonos room or group: every command goes to its coordinator, at [host] ("ip:port"). */
 class Room(val id: String, val name: String, val host: String)
 
-/** A media server: its name, the address it lives at, its ContentDirectory control URL and its icon. */
-class Server(val udn: String, val name: String, val host: String, val control: String, val icon: String?)
+/**
+ * A media server: its name, the address it lives at, its ContentDirectory control URL and its icon. [library]: the
+ * Sonos household's own music library, served by a player, whose tracks are SMB links.
+ */
+class Server(
+    val udn: String, val name: String, val host: String, val control: String, val icon: String?,
+    val library: Boolean = false,
+)
 
 private fun XmlPullParser.attr(name: String) = getAttributeValue(null, name) ?: ""
 
@@ -42,6 +48,28 @@ fun noDtd(s: String): String {
 }
 
 private fun parser(b: ByteArray): XmlPullParser = Xml.newPullParser().apply { setInput(noDtd(b).inputStream(), null) }
+
+/** An IP address written out: IPv4, or IPv6 in brackets as a URL has it. Resolving one never asks DNS. */
+fun literal(host: String): Boolean {
+    if (host.length > 2 && host[0] == '[' && host[host.length - 1] == ']') {
+        return host.substring(1, host.length - 1).all { it == ':' || it == '.' || it == '%' || it.isLetterOrDigit() }
+    }
+    val p = host.split('.')
+    return p.size == 4 && p.all { it.length in 1..3 && it.all { c -> c in '0'..'9' } && it.toInt() <= 255 }
+}
+
+/** [ip] lies within [net]/[prefix]; both 4 bytes or both 16. */
+fun inSubnet(ip: ByteArray, net: ByteArray, prefix: Int): Boolean {
+    if (ip.size != net.size || prefix < 0 || prefix > ip.size * 8) return false
+    for (i in 0 until prefix) {
+        val m = 0x80 ushr (i % 8)
+        if ((ip[i / 8].toInt() and m) != (net[i / 8].toInt() and m)) return false
+    }
+    return true
+}
+
+private const val SONOS_PORT = 1400
+private const val MAX_PAGES = 50 // Per track list for a menu: up to 10,000 entries looked through for 500 tracks.
 
 object Upnp {
     /** "ip:port" of an http URL, or null. */
@@ -76,7 +104,8 @@ object Upnp {
     private const val FILTER = "dc:title,dc:creator,upnp:artist,upnp:album,upnp:albumArtURI,upnp:class," +
         "res,res@protocolInfo,res@sampleFrequency,res@bitsPerSample,res@duration,@childCount"
 
-    fun browse(s: Server, id: String, start: Int, count: Int) = browse(s.control, Didl.on(s.host), id, start, count)
+    fun browse(s: Server, id: String, start: Int, count: Int) =
+        browse(s.control, if (s.library) Didl.library(s.control) else Didl.on(s.host), id, start, count)
 
     /** A page of any ContentDirectory: a server's, or a Sonos queue's ("Q:0"); [url] vets the URLs in it. */
     fun browse(control: String, url: (String) -> String?, id: String, start: Int, count: Int): Page {
@@ -93,13 +122,23 @@ object Upnp {
     fun tracks(s: Server, id: String, max: Int): List<Entry> {
         val out = ArrayList<Entry>()
         var start = 0
-        while (out.size < max) {
+        var pages = 0
+        // Bounded by pages too, and only forward: a server can't keep it going with pages of nothing playable, or
+        // send it back with a negative count.
+        while (out.size < max && pages++ < MAX_PAGES) {
             val p = browse(s, id, start, 200)
             p.entries.filterTo(out) { !it.container && it.playable }
+            if (p.returned <= 0) break
             start += p.returned
-            if (p.returned == 0 || start >= p.total) break
+            if (start >= p.total) break
         }
         return if (out.size > max) out.subList(0, max) else out
+    }
+
+    /** "ip:port" names a Sonos player on the phone's WiFi. */
+    private fun player(host: String): Boolean {
+        val ip = host.substringBeforeLast(':')
+        return host.substringAfterLast(':') == SONOS_PORT.toString() && literal(ip) && Lan.local(ip)
     }
 
     /** Every visible room in the household, from any one player at [host]. */
@@ -127,7 +166,9 @@ object Upnp {
                 // A bonded Sub or surround is an Invisible member, or a Satellite element inside one.
                 "ZoneGroupMember" -> if (p.attr("Invisible") != "1") {
                     if (p.attr("UUID") != coordinator) others++
-                    else hostOf(p.attr("Location"))?.let {
+                    // Only a player on this WiFi, at Sonos's port: the topology is the one list the SSDP check
+                    // doesn't cover, and the player is asked every few seconds.
+                    else hostOf(p.attr("Location"))?.takeIf { player(it) }?.let {
                         at = it
                         name = p.attr("ZoneName")
                     }

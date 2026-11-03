@@ -5,12 +5,19 @@ import android.app.Activity
 import android.content.res.Configuration
 import android.os.Bundle
 import android.view.GestureDetector
+import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
 import android.widget.ScrollView
 import kotlin.math.abs
 
 private const val SWIPE_DP = 1000 // dp/s downwards that close the sheet: a flick, not a slow scroll.
+
+/**
+ * The cover's side: [want] within [min]..[max], where a small window (split screen, a short one) can make [max] the
+ * smaller of the two; then it's [max].
+ */
+fun coverSide(want: Int, min: Int, max: Int) = want.coerceIn(minOf(min, max), max)
 
 /** The room's track at full size, with progress, transport, play mode, volume and the way to its queue. */
 class NowPlayingActivity : Activity() {
@@ -72,7 +79,7 @@ class NowPlayingActivity : Activity() {
         findViewById<View>(R.id.player).addOnLayoutChangeListener { v, _, _, _, _, _, _, _, _ ->
             // The content's own height is the column's less the spacer's share; the screen's is the ScrollView's.
             val over = v.height - spare.height - (scroll.height - scroll.paddingTop - scroll.paddingBottom)
-            val side = (art.height - over).coerceIn((160 * resources.displayMetrics.density).toInt(), largest)
+            val side = coverSide(art.height - over, (160 * resources.displayMetrics.density).toInt(), largest)
             if (side != art.height) v.post { cover(side) } // Not inside this layout pass.
         }
     }
@@ -95,6 +102,9 @@ class NowPlayingActivity : Activity() {
         player.stop()
         super.onStop()
     }
+
+    // The volume buttons set the room's volume while this screen is in front.
+    override fun dispatchKeyEvent(e: KeyEvent) = player.key(e) || super.dispatchKeyEvent(e)
 
     override fun onDestroy() {
         player.destroy()

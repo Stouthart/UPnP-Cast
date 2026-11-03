@@ -72,6 +72,18 @@ object Didl {
     fun on(host: String): (String) -> String? = { local(host, it) }
 
     /**
+     * The Sonos music library's check: its tracks are SMB links (x-file-cifs), which only the speaker opens; its
+     * covers are relative links on the player at [control], kept only there.
+     */
+    fun library(control: String): (String) -> String? {
+        val base = URL(control)
+        return { u ->
+            if (u.startsWith("x-file-cifs://")) u
+            else runCatching { URL(base, u) }.getOrNull()?.takeIf { it.protocol == "http" && it.host == base.host }?.toString()
+        }
+    }
+
+    /**
      * The entries of a DIDL-Lite document. [url] vets every cover and track URL; a refused track URL keeps the
      * track's format and length but makes it unplayable.
      */
@@ -126,7 +138,7 @@ object Didl {
                     val duration = p.getAttributeValue(null, "duration") ?: ""
                     val r = Res(url(p.nextText().trim()) ?: "", info, hz, bits, duration)
                     if (first == null) first = r
-                    if (hz <= MAX_HZ) res = r
+                    if (r.url.isNotEmpty() && hz <= MAX_HZ) res = r // One whose link was refused leaves room for the next.
                 }
             }
         }

@@ -64,12 +64,25 @@ class Art(val px: Int, private val loaded: (String) -> Unit) {
         }
     }
 
-    /** Forgets the covers that failed, so the next show() fetches them again, as after WiFi came back; says if any had. */
+    /**
+     * Forgets the covers that failed or were dropped by [pause], so the next show() fetches them again, as after WiFi
+     * came back or the screen showing again; says if there were any.
+     */
     fun retry(): Boolean {
-        if (failed.isEmpty()) return false
+        if (failed.isEmpty() && !paused) return false
         failed.clear()
+        paused = false
         return true
     }
+
+    /** The screen stopped: the loads not yet begun are dropped, nothing fetches for a screen that isn't shown. */
+    fun pause() {
+        pool.queue.clear()
+        loading.clear() // Those still running land in the cache as they finish.
+        paused = true
+    }
+
+    private var paused = false // Main thread only.
 
     fun stop() {
         pool.shutdownNow()

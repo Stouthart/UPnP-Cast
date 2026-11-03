@@ -24,7 +24,7 @@
 
     <style name="Button">
         <item name="android:layout_width">match_parent</item>
-        <item name="android:layout_height">56dp</item>
+        <item name="android:layout_height">48dp</item>
         <item name="android:background">@drawable/button</item>
         <item name="android:clickable">true</item>
         <item name="android:focusable">true</item>
@@ -34,7 +34,7 @@
         <item name="android:textSize">17sp</item>
     </style>
 
-    <!-- A section title with the accent bar beside it, as LDAC Lock's Lock section. -->
+    <!-- A section title with the accent bar beside it. -->
     <style name="Title">
         <item name="android:layout_width">wrap_content</item>
         <item name="android:layout_height">wrap_content</item>
@@ -57,7 +57,7 @@
     <!-- One of the three Appearance choices, a third of the row each. -->
     <style name="Segment">
         <item name="android:layout_width">0dp</item>
-        <item name="android:layout_height">44dp</item>
+        <item name="android:layout_height">48dp</item> <!-- One height for segments and buttons, in both apps. -->
         <item name="android:layout_weight">1</item>
         <item name="android:background">@drawable/segment</item>
         <item name="android:foreground">?android:attr/selectableItemBackground</item>

@@ -1,4 +1,4 @@
-<!-- LDAC Lock's five rounded level bars, small: marks the playing track in the queue, as the Sonos app does. -->
+<!-- Five rounded level bars, small: marks the playing track in the queue, as the Sonos app does. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="18dp"
     android:height="18dp"

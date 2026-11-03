@@ -2,11 +2,14 @@ package nl.stouthart.upnpcast
 
 import android.content.Context
 import android.net.ConnectivityManager
+import android.net.LinkAddress
+import android.net.LinkProperties
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
 import android.os.Handler
 import android.os.Looper
+import java.net.InetAddress
 
 /** Why [name] didn't answer: the phone has no WiFi, or else the device itself. */
 fun Context.unreachable(name: String): String =
@@ -14,7 +17,7 @@ fun Context.unreachable(name: String): String =
 
 /**
  * The phone's WiFi (or Ethernet, as on a docked tablet), where the speakers and servers are: watched while a screen
- * shows, as LDAC Lock watches Bluetooth. The app's sockets are bound to it, so they stay on the LAN while Android
+ * shows. The app's sockets are bound to it (the process, and each socket as it opens), so they stay on the LAN while Android
  * sends the internet over mobile data, as when the home internet is down; without it, requests fail at once rather
  * than trying mobile data for 3 s.
  */
@@ -23,6 +26,18 @@ object Lan {
     @Volatile
     var wifi: Network? = null
         private set
+
+    // Its addresses with their prefixes, for [local]; empty until known.
+    @Volatile
+    private var subnets: List<LinkAddress> = emptyList()
+
+    /** [ip], a literal, is on the phone's WiFi: in its subnet, or while that isn't known, a private or link-local one. */
+    fun local(ip: String): Boolean {
+        val a = runCatching { InetAddress.getByName(ip) }.getOrNull() ?: return false
+        val nets = subnets
+        if (nets.isEmpty()) return a.isSiteLocalAddress || a.isLinkLocalAddress
+        return nets.any { inSubnet(a.address, it.address.address, it.prefixLength) }
+    }
 
     // Main thread only, from here on.
     private val watchers = ArrayList<() -> Unit>() // One per visible screen.
@@ -43,6 +58,10 @@ object Lan {
         override fun onLost(n: Network) {
             nets -= n
             if (n == wifi) use(nets.firstOrNull(), true)
+        }
+
+        override fun onLinkPropertiesChanged(n: Network, lp: LinkProperties) {
+            if (n == wifi) subnets = lp.linkAddresses
         }
     }
 
@@ -71,6 +90,7 @@ object Lan {
 
     private fun use(n: Network?, tell: Boolean) {
         if (n == wifi) return
+        subnets = n?.let { cm?.getLinkProperties(it)?.linkAddresses }.orEmpty()
         wifi = n
         cm?.bindProcessToNetwork(n) // Refused under a VPN that allows no bypass: requests then go its way, as before.
         if (tell) for (w in watchers.toList()) w()

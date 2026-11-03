@@ -3,10 +3,13 @@ package nl.stouthart.upnpcast
 import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.io.InputStream
+import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.Socket
 import java.net.URL
 import java.util.concurrent.Executor
+import java.util.concurrent.ScheduledThreadPoolExecutor
+import java.util.concurrent.TimeUnit
 
 /** Runs [work] on [e], or not at all once the screen that owns [e] has shut it down: never a crash. */
 fun later(e: Executor, work: () -> Unit) {
@@ -40,52 +43,69 @@ object Http {
         return send(URL(control), "POST", headers, body.toByteArray())
     }
 
+    // Writes have no timeout of their own: at the deadline this closes the socket, which ends any I/O still on it.
+    private val watchdog = ScheduledThreadPoolExecutor(1) { r -> Thread(r, "http-deadline").apply { isDaemon = true } }
+        .apply { removeOnCancelPolicy = true }
+
     private fun send(u: URL, method: String, headers: String, body: ByteArray?): ByteArray {
         if (u.protocol != "http") throw IOException("Not http: $u")
-        if (Lan.wifi == null) throw IOException("No WiFi") // Not a 3 s wait for a LAN address over mobile data.
+        val net = Lan.wifi ?: throw IOException("No WiFi") // Not a 3 s wait for a LAN address over mobile data.
+        // An address, never a name: no DNS, which could take any time and point anywhere. The path goes on the request
+        // line as it is, so a space is escaped and any other control character refused: it could add header lines.
+        if (!literal(u.host)) throw IOException("Not an address: ${u.host}")
+        val target = u.file.ifEmpty { "/" }.replace(" ", "%20")
+        if (target.any { it < ' ' || it == '\u007f' }) throw IOException("Bad request target")
         val port = if (u.port < 0) 80 else u.port
-        val head = ("$method ${u.file.ifEmpty { "/" }} HTTP/1.1\r\nHost: ${u.host}:$port\r\nConnection: close\r\n" +
+        val head = ("$method $target HTTP/1.1\r\nHost: ${u.host}:$port\r\nConnection: close\r\n" +
             headers + (if (body == null) "" else "Content-Length: ${body.size}\r\n") + "\r\n").toByteArray()
         val end = System.nanoTime() + DEADLINE
         Socket().use { s ->
-            s.tcpNoDelay = true
-            s.soTimeout = TIMEOUT
-            s.connect(InetSocketAddress(u.host, port), TIMEOUT)
-            s.getOutputStream().write(if (body == null) head else head + body)
+            // On the network checked above, whatever the process binding says by now (WiFi may have gone meanwhile).
+            // Refused under a VPN that allows no bypass: the request then goes its way, as the process binding does.
+            runCatching { net.bindSocket(s) }
+            val kill = watchdog.schedule({ runCatching { s.close() } }, DEADLINE, TimeUnit.NANOSECONDS)
+            try {
+                s.tcpNoDelay = true
+                s.soTimeout = TIMEOUT
+                s.connect(InetSocketAddress(InetAddress.getByName(u.host), port), TIMEOUT) // A literal: no lookup.
+                s.getOutputStream().write(if (body == null) head else head + body)
 
-            val i = s.getInputStream().buffered(16384)
-            val code = line(i, end).split(' ', limit = 3).getOrNull(1)?.toIntOrNull() ?: throw IOException("Not HTTP")
-            var length = -1L
-            var chunked = false
-            var headers = 0
-            while (true) {
-                val h = line(i, end)
-                if (h.isEmpty()) break
-                if (++headers > MAX_HEADERS) throw IOException("Too many headers")
-                val c = h.indexOf(':')
-                if (c < 0) continue
-                val name = h.substring(0, c).trim()
-                val value = h.substring(c + 1).trim()
-                if (name.equals("Content-Length", true)) length = value.toLongOrNull() ?: -1
-                else if (name.equals("Transfer-Encoding", true)) chunked = value.contains("chunked", true)
-            }
-
-            val out = ByteArrayOutputStream(if (length in 0..MAX_BODY) length.toInt() else 16384)
-            val buf = ByteArray(16384)
-            when {
-                chunked -> while (true) {
-                    val n = line(i, end).substringBefore(';').trim().toIntOrNull(16)
-                    if (n == null || n < 0) throw IOException("Bad chunk") // A negative size would read to the end.
-                    if (n == 0) break
-                    copy(i, out, buf, n.toLong(), end)
-                    line(i, end) // The CRLF that ends each chunk.
+                val i = s.getInputStream().buffered(16384)
+                val code = line(i, end).split(' ', limit = 3).getOrNull(1)?.toIntOrNull() ?: throw IOException("Not HTTP")
+                var length = -1L
+                var chunked = false
+                var headers = 0
+                while (true) {
+                    val h = line(i, end)
+                    if (h.isEmpty()) break
+                    if (++headers > MAX_HEADERS) throw IOException("Too many headers")
+                    val c = h.indexOf(':')
+                    if (c < 0) continue
+                    val name = h.substring(0, c).trim()
+                    val value = h.substring(c + 1).trim()
+                    if (name.equals("Content-Length", true)) length = value.toLongOrNull() ?: -1
+                    else if (name.equals("Transfer-Encoding", true)) chunked = value.contains("chunked", true)
                 }
-                length >= 0 -> copy(i, out, buf, length, end)
-                else -> copy(i, out, buf, -1, end) // Until the device closes the connection.
+
+                val out = ByteArrayOutputStream(if (length in 0..MAX_BODY) length.toInt() else 16384)
+                val buf = ByteArray(16384)
+                when {
+                    chunked -> while (true) {
+                        val n = line(i, end).substringBefore(';').trim().toIntOrNull(16)
+                        if (n == null || n < 0) throw IOException("Bad chunk") // A negative size would read to the end.
+                        if (n == 0) break
+                        copy(i, out, buf, n.toLong(), end)
+                        line(i, end) // The CRLF that ends each chunk.
+                    }
+                    length >= 0 -> copy(i, out, buf, length, end)
+                    else -> copy(i, out, buf, -1, end) // Until the device closes the connection.
+                }
+                val b = out.toByteArray()
+                if (code != 200) throw HttpException(code, upnpError(b))
+                return b
+            } finally {
+                kill.cancel(false)
             }
-            val b = out.toByteArray()
-            if (code != 200) throw HttpException(code, upnpError(b))
-            return b
         }
     }
 

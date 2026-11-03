@@ -9,6 +9,7 @@ import android.os.Looper
 import android.os.SystemClock
 import android.text.SpannableString
 import android.text.style.ForegroundColorSpan
+import android.view.KeyEvent
 import android.view.View
 import android.widget.ImageView
 import android.widget.SeekBar
@@ -52,20 +53,30 @@ class Player(private val a: Activity) {
         private var seen = false
     }
 
-    /** One poll's answer, [at] the uptime the position arrived; volume -1 and the nulls mean "not asked this time". */
+    /**
+     * One poll's answer, [at] the uptime the position arrived; volume -1 and the nulls mean "not asked this time".
+     * [tv]: the TV input's format, asked only on Now Playing while the TV plays.
+     */
     private class Answer(
         val state: String, val pos: Position, val at: Long, val track: Track?, val volume: Int, val muted: Boolean?, val mode: Mode?,
-        val queued: Boolean?,
+        val queued: Boolean?, val tv: String?,
     )
 
     /** Where covers may come from besides the speaker itself: the servers this app knows. */
     val hosts: MutableSet<String> = ConcurrentHashMap.newKeySet()
 
+    // Main thread only, like the views it resets.
     @Volatile
     var room: Room? = null
         set(v) {
             field = v
             gen++
+            // Whatever the room before still had to send stays there, and its volume isn't this one's: the number
+            // clears and the volume buttons wait until this room's own is read.
+            wanted = -1
+            sending = false
+            quiet = 0L
+            level.text = ""
             place()
             refresh()
         }
@@ -140,6 +151,7 @@ class Player(private val a: Activity) {
     private var quiet = 0L
     private var wanted = -1 // The volume still to send; one SetVolume is in flight at most.
     private var sending = false
+    private var keyed = false // The last volume button press went to the room, so its release does too.
 
     init {
         toggle.setOnClickListener {
@@ -183,7 +195,9 @@ class Player(private val a: Activity) {
         }
         progress?.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(s: SeekBar, v: Int, user: Boolean) {
-                if (user) times(v, s.max)
+                if (!user) return
+                times(v, s.max)
+                if (!seeking) seek(v) // A key or TalkBack, not a drag: each of their steps is a seek of its own.
             }
 
             override fun onStartTrackingTouch(s: SeekBar) {
@@ -192,15 +206,18 @@ class Player(private val a: Activity) {
 
             override fun onStopTrackingTouch(s: SeekBar) {
                 seeking = false
-                quiet = SystemClock.uptimeMillis() + QUIET_MS
-                val to = s.progress
-                base = to * 1000L // The clock goes along at once; answers that don't fit it can't pull it back meanwhile.
-                at = SystemClock.uptimeMillis()
-                settle = at + SETTLE_MS
-                retick()
-                command { Sonos.seek(it, to) }
+                seek(s.progress)
             }
         })
+    }
+
+    private fun seek(to: Int) {
+        quiet = SystemClock.uptimeMillis() + QUIET_MS
+        base = to * 1000L // The clock goes along at once; answers that don't fit it can't pull it back meanwhile.
+        at = SystemClock.uptimeMillis()
+        settle = at + SETTLE_MS
+        retick()
+        command { Sonos.seek(it, to) }
     }
 
     /** Asks the room at the Polling interval from the main screen: 2 s by default, up to 10 s. Watches WiFi meanwhile. */
@@ -208,17 +225,28 @@ class Player(private val a: Activity) {
         Lan.start(a, lan)
         if (full && Lan.wifi == null) a.finish() // As when WiFi went while the app was away.
         place()
+        if (covers.retry()) shown = "" // A cover dropped at stop() is asked for again by the first answer.
+        live = true
         val s = Prefs.poll(a).toLong()
         exec = Executors.newSingleThreadScheduledExecutor().apply { scheduleWithFixedDelay(::poll, 0, s, TimeUnit.SECONDS) }
     }
 
     fun stop() {
         Lan.stop(lan)
+        live = false
         gen++
+        // shutdownNow drops a volume change still queued, so nothing is in flight any more as far as the slider goes.
+        wanted = -1
+        sending = false
         exec?.shutdownNow()
         exec = null
         ui.removeCallbacks(tick)
+        covers.pause()
     }
+
+    // Between start() and stop(): a command still running when the screen stopped doesn't poll, nor restart the clock.
+    @Volatile
+    private var live = false
 
     // Between polls the progress counts on by itself, on a clock of its own while the room plays: each second shows for a
     // second, at any interval and with no network. A poll corrects the clock only where it disagrees with the speaker.
@@ -280,6 +308,29 @@ class Player(private val a: Activity) {
         }
     }
 
+    /**
+     * A volume button, pressed (also each repeat while held) or released while this screen is in front: the room's
+     * volume by the Volume button step, sent as a drag of the slider is. False, so the phone's own volume takes the key,
+     * while there's nothing to control: no room or WiFi, no volume read yet, or the mini player hidden.
+     */
+    fun key(e: KeyEvent): Boolean {
+        val up = when (e.keyCode) {
+            KeyEvent.KEYCODE_VOLUME_UP -> true
+            KeyEvent.KEYCODE_VOLUME_DOWN -> false
+            else -> return false
+        }
+        if (e.action != KeyEvent.ACTION_DOWN) return keyed
+        keyed = room != null && Lan.wifi != null && level.text.isNotEmpty() && (full || view.visibility == View.VISIBLE)
+        if (!keyed) return false
+        val step = Prefs.step(a)
+        val v = (volume.progress + if (up) step else -step).coerceIn(0, 100)
+        if (v != volume.progress) {
+            volume.progress = v // Not the user's: its listener shows the number, and the send is here.
+            send(v)
+        }
+        return true
+    }
+
     private fun send(v: Int) {
         wanted = v
         quiet = SystemClock.uptimeMillis() + QUIET_MS
@@ -287,10 +338,12 @@ class Player(private val a: Activity) {
         val r = room ?: return
         sending = true
         wanted = -1
+        val g = gen
         later {
             runCatching { Sonos.volume(r, v) }
             fresh = true // The next poll reads the volume back, once the quiet time lets it show.
             a.runOnUiThread {
+                if (g != gen) return@runOnUiThread // A room switch or stop() has reset all this meanwhile.
                 sending = false
                 if (wanted >= 0) send(wanted)
             }
@@ -299,6 +352,7 @@ class Player(private val a: Activity) {
     }
 
     private fun poll() {
+        if (!live) return
         val r = room ?: return
         val g = gen
         val all = fresh || ticks % slow == 0
@@ -316,6 +370,8 @@ class Player(private val a: Activity) {
                 state, p, got, lastTrack,
                 if (all) Sonos.volume(r) else -1, if (all) Sonos.muted(r) else null,
                 if (all && full) Sonos.mode(r) else null, if (all && media) Sonos.queued(r) else null,
+                // Its own failure only leaves the line empty; the player still shows the rest.
+                if (full && p.uri.startsWith("x-sonos-htastream:")) runCatching { Sonos.tvFormat(r) }.getOrNull() else null,
             )
         }.getOrNull()
         a.runOnUiThread { if (g == gen) show(r, answer) }
@@ -377,14 +433,15 @@ class Player(private val a: Activity) {
         }
         val detail = listOf(r.name, t?.artist ?: "", if (full) t?.album ?: "" else "").filter { it.isNotEmpty() }.joinToString(" · ")
         val cover = t?.let { cover(r, it.art, it.uri) }
-        val now = "$name\n$detail\n$cover\n${t?.format}"
+        val quality = t?.format ?: answer?.tv ?: "" // The TV has no track, but its input format.
+        val now = "$name\n$detail\n$cover\n$quality"
         if (now != shown) {
             shown = now
             title.text = name
             meta.text = SpannableString(detail).apply {
                 if (r.name.isNotEmpty()) setSpan(ForegroundColorSpan(a.getColor(R.color.accent)), 0, r.name.length, 0)
             }
-            format?.text = t?.format ?: ""
+            format?.text = quality
             covers.show(art, cover, R.drawable.ic_music)
         }
         if (answer == null) return

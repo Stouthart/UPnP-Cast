@@ -1,6 +1,7 @@
 package nl.stouthart.upnpcast
 
 import android.os.SystemClock
+import java.io.IOException
 import java.net.DatagramPacket
 import java.net.DatagramSocket
 import java.net.InetAddress
@@ -18,7 +19,9 @@ object Ssdp {
 
     /** Calls [found] for each answer until [ms] have passed; devices wait up to MX (1 s) before answering. */
     fun search(targets: Array<String>, ms: Long, found: (Answer) -> Unit) {
+        val net = Lan.wifi ?: throw IOException("No WiFi")
         DatagramSocket().use { s ->
+            runCatching { net.bindSocket(s) } // As in Http: on the WiFi, wherever the process binding points by now.
             for (t in targets) {
                 val m = "M-SEARCH * HTTP/1.1\r\nHOST: 239.255.255.250:1900\r\nMAN: \"ssdp:discover\"\r\nMX: 1\r\nST: $t\r\n\r\n"
                     .toByteArray()
