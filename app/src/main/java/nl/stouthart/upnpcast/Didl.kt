@@ -12,18 +12,30 @@ import java.util.Locale
 /** Sonos plays nothing above 48 kHz over UPnP. */
 const val MAX_HZ = 48000
 
+private val LOSSLESS = setOf("FLAC", "ALAC", "WAV", "LPCM", "AIFF")
+
 /** A track's audio as the server offers it; 0 where the server doesn't say. */
 class Res(val url: String, val protocolInfo: String, val hz: Int, val bits: Int, val duration: String) {
-    /** "FLAC 44.1 kHz 16-bit", as far as the server tells; a stream's [quality] ("Lossless") follows the codec. */
-    fun format(quality: String = ""): String {
+    private fun codec(): String {
         val mime = protocolInfo.split(':').getOrNull(2)?.substringAfter('/')?.removePrefix("x-")?.lowercase() ?: ""
-        val codec = when (mime) {
+        return when (mime) {
             "mpeg", "mp3" -> "MP3"
             "mp4", "m4a" -> "M4A"
             "wav", "wave" -> "WAV"
             "l16", "l24" -> "LPCM"
             else -> mime.uppercase()
         }
+    }
+
+    /**
+     * The music reaches the speaker as it was recorded: a lossless codec, or a stream that says so ([quality]). An M4A
+     * may hold ALAC or AAC, so it doesn't count.
+     */
+    fun lossless(quality: String = "") = if (quality.isNotEmpty()) quality == "Lossless" else codec() in LOSSLESS
+
+    /** "FLAC 44.1 kHz 16-bit", as far as the server tells; a stream's [quality] ("Lossless") follows the codec. */
+    fun format(quality: String = ""): String {
+        val codec = codec()
         val rate = when {
             hz >= 1_000_000 -> "%.1f MHz".format(Locale.ROOT, hz / 1e6) // DSD.
             hz % 1000 == 0 && hz > 0 -> "${hz / 1000} kHz"

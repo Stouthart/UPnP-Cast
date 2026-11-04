@@ -42,7 +42,8 @@
                     style="@style/Summary" />
             </LinearLayout>
 
-            <!-- Plays the level's tracks from the top, as a tap on the first; only where there are tracks. -->
+            <!-- Plays the level's tracks from the top, as a tap on the first; only where there are tracks. Grey, as the
+                 header's other buttons. -->
             <ImageView
                 android:id="@+id/play"
                 android:layout_width="40dp"
@@ -51,7 +52,7 @@
                 android:contentDescription="@string/play"
                 android:padding="8dp"
                 android:src="@drawable/ic_play"
-                android:tint="@color/accent_text"
+                android:tint="@color/text2"
                 android:visibility="gone" />
 
             <!-- The Music library's top level only, which has no tracks and so no Play: Scan for new content. -->

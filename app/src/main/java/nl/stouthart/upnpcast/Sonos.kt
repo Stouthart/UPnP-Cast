@@ -19,7 +19,10 @@ enum class Repeat { OFF, ALL, ONE }
 
 /** What the room is playing, from its TrackMetaData; [art] may be relative to the speaker. */
 /** The playing track; [uri] is its own, which the speaker can find a streaming service's cover for. */
-class Track(val title: String, val artist: String, val album: String, val art: String, val format: String, val uri: String)
+class Track(
+    val title: String, val artist: String, val album: String, val art: String, val format: String, val uri: String,
+    val lossless: Boolean, // See Res.lossless: Now Playing shows the format in green.
+)
 
 /**
  * The room's track as raw TrackMetaData (parse it with [Sonos.track] only when it changed), its queue position,
@@ -66,6 +69,9 @@ private const val TAG = "UPnPCast"
 
 /** "H:MM:SS" for the speaker: in ASCII digits whatever the phone's language, as Sonos reads no other. */
 fun hms(s: Int) = "%d:%02d:%02d".format(Locale.ROOT, s / 3600, s / 60 % 60, s % 60)
+
+/** A relative Seek's target: [s] seconds on, or back when negative, as +0:00:15 or -0:00:15. */
+fun delta(s: Int) = (if (s < 0) "-" else "+") + hms(if (s < 0) -s else s)
 
 /** The room's queue and transport, always on its coordinator; the speaker fetches each track from the server itself. */
 object Sonos {
@@ -145,6 +151,62 @@ object Sonos {
         "<InstanceID>0</InstanceID><Channel>Master</Channel>$args",
     )
 
+    // A room's own settings, on its own player ("ip:port"): tone and EQ in RenderingControl, the light and the buttons in
+    // DeviceProperties.
+    private fun own(host: String, service: String, action: String, args: String = ""): ByteArray = Http.soap(
+        "http://$host/${if (service == "DeviceProperties") "" else "MediaRenderer/"}$service/Control", service, action,
+        "<InstanceID>0</InstanceID>$args",
+    )
+
+    /**
+     * A room setting by [key] from its own player [host]: Bass, Treble, Loudness, Trueplay (1 on, plus 2 once Trueplay
+     * has tuned the room: both from one reply), Speech (0 off, else its level 1..4), LED and Touch (1 on), else an EQ
+     * type, as NightMode.
+     * Null when the player hasn't got it: it answers with a UPnP error, as 402 for Night Sound on an Era 300.
+     */
+    fun setting(host: String, key: String): Int? {
+        fun rc(action: String, args: String, name: String) = Upnp.arg(own(host, "RenderingControl", action, args), name)
+        fun eq(type: String) = rc("GetEQ", "<EQType>$type</EQType>", "CurrentValue")
+        fun dp(action: String, name: String) = Upnp.arg(own(host, "DeviceProperties", action), name)
+        return try {
+            when (key) {
+                "Bass", "Treble" -> rc("Get$key", "", "Current$key")
+                "Loudness" -> rc("GetLoudness", "<Channel>Master</Channel>", "CurrentLoudness")
+                "Trueplay" -> {
+                    val x = own(host, "RenderingControl", "GetRoomCalibrationStatus")
+                    val (on, tuned) = Upnp.args(x, "RoomCalibrationEnabled", "RoomCalibrationAvailable")
+                    on?.toIntOrNull()?.let { (it + if (tuned == "1") 2 else 0).toString() }
+                }
+                "Speech" -> if (eq("SpeechEnhanceEnabled") == "1") eq("DialogLevel") else "0"
+                "LED" -> if (dp("GetLEDState", "CurrentLEDState") == "On") "1" else "0"
+                "Touch" -> if (dp("GetButtonLockState", "CurrentButtonLockState") == "Off") "1" else "0" // Not locked.
+                else -> eq(key)
+            }?.toIntOrNull()
+        } catch (e: HttpException) {
+            if (e.upnp > 0) null else throw e
+        }
+    }
+
+    /** Sets [key] (see the read) to [v] on the room's own player [host]. */
+    fun setting(host: String, key: String, v: Int) {
+        fun rc(action: String, args: String) = own(host, "RenderingControl", action, args)
+        fun eq(type: String, x: Int) = rc("SetEQ", "<EQType>$type</EQType><DesiredValue>$x</DesiredValue>")
+        fun dp(action: String, name: String, x: String) = own(host, "DeviceProperties", action, "<Desired$name>$x</Desired$name>")
+        when (key) {
+            "Bass", "Treble" -> rc("Set$key", "<Desired$key>$v</Desired$key>")
+            "Loudness" -> rc("SetLoudness", "<Channel>Master</Channel><DesiredLoudness>$v</DesiredLoudness>")
+            "Trueplay" -> rc("SetRoomCalibrationStatus", "<RoomCalibrationEnabled>$v</RoomCalibrationEnabled>")
+            // Its switch, then the level once that took; the speaker takes level 0 and ignores it, so 0 is the switch.
+            "Speech" -> {
+                eq("SpeechEnhanceEnabled", if (v > 0) 1 else 0)
+                if (v > 0) eq("DialogLevel", v)
+            }
+            "LED" -> dp("SetLEDState", "LEDState", if (v == 1) "On" else "Off")
+            "Touch" -> dp("SetButtonLockState", "ButtonLockState", if (v == 1) "Off" else "On")
+            else -> eq(key, v)
+        }
+    }
+
     private fun queueUri(r: Room) = "x-rincon-queue:${r.id}#0"
 
     /** Whether the room plays its queue, rather than e.g. Spotify or the TV. */
@@ -181,6 +243,11 @@ object Sonos {
 
     fun seek(r: Room, s: Int) {
         avt(r, "Seek", "<Unit>REL_TIME</Unit><Target>${hms(s)}</Target>")
+    }
+
+    /** [s] seconds on, or back, from where the track is: the speaker stops at 0:00, and past the end goes to the next. */
+    fun skip(r: Room, s: Int) {
+        avt(r, "Seek", "<Unit>TIME_DELTA</Unit><Target>${delta(s)}</Target>")
     }
 
     // A group's volume and mute, on its coordinator: what the Sonos app's slider sets for a group.
@@ -306,9 +373,11 @@ object Sonos {
                 }
             }
         }
-        val format = Res("", info, hz, bits, "").format(quality)
-        if (stream.isNotEmpty()) return Track(stream, title, album, art, format, uri)
-        return if (title.isEmpty()) null else Track(title, artist, album, art, format, uri)
+        val res = Res("", info, hz, bits, "")
+        val format = res.format(quality)
+        val lossless = res.lossless(quality)
+        if (stream.isNotEmpty()) return Track(stream, title, album, art, format, uri, lossless)
+        return if (title.isEmpty()) null else Track(title, artist, album, art, format, uri, lossless)
     }
 
     /**

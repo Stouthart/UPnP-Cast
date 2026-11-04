@@ -1,8 +1,19 @@
-<!-- 1.3 - Copyright (C) 2026 Stouthart. All rights reserved. -->
+<!-- 1.4 - Copyright (C) 2026 Stouthart. All rights reserved. -->
 
 # Release notes
 
 Highlights per version, newest first.
+
+## 1.4 - November 2026
+
+- **Room settings:** the new icon at the top right of the Rooms card opens each room's own settings, as the Sonos app has them: Trueplay tuning; EQ, with Bass, Treble, Height level and Loudness; Volume limit; Sub audio with a bonded Sub, with Phase control while Trueplay is off; Home theater on a soundbar, with Speech Enhancement, Night Sound and TV dialog sync; and Hardware, with Status Light and Touch controls. One room is open at a time, its settings right under it, starting with the room the player controls; only what its speaker has shows, and a change applies at once. Back in the app, or once WiFi returns, they're read again, so a change made in the Sonos app shows.
+- **App settings:** the Settings card is now called App settings, next to the rooms' own; Group rooms is a switch.
+- **Quick skip,** as the Sonos app calls it: a new setting, off at first, from 5 to 60 seconds. When set, Now Playing has a button on each side of Play that skips back or forward that far from where the track is, also on Spotify; quick taps add up. Off, the controls stay as they were.
+- **The progress keeps moving:** back on Now Playing from another app, within the same track, the progress bar and its times now move on; now and then they stood still until the next track or a pause.
+- **Previous and Next in circles** on Now Playing, quiet grey ones, smaller than Play's; the controls are evenly spaced, with or without Quick skip.
+- **Colour that means something:** green for good news, such as the count of what was found (**2 rooms**, **12 items**), a lossless track's format on Now Playing, such as `FLAC 44.1 kHz 16-bit`, and a room Trueplay has tuned; orange for a problem, such as no WiFi, no Sonos system, a room or server that doesn't answer, and in Browse the format of a track above 48 kHz, why it's greyed out. Browse's buttons are grey, as Room settings' on the main screen; Scan for new content turns blue while it runs.
+- **Sliders whole:** the icon before a slider in App settings, such as Polling interval's, is no longer cut off at its left edge.
+- **Sturdier:** a cover far wider than tall is decoded at a smaller size and kept as the square that shows, so it can't take tens of MB; a server's list stops at 50,000 entries, however many it says it sent.
 
 ## 1.3 - November 2026
 

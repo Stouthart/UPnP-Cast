@@ -9,8 +9,9 @@ object Prefs {
     private const val APPEARANCE = "appearance" // 0 System default, 1 Light mode, 2 Dark mode.
     private const val STEP = "step" // Volume per press of a volume button.
     private const val POLL = "poll" // Seconds between the player's questions to the room.
-    private const val OPEN = "open" // The Settings card was left open.
+    private const val OPEN = "open" // The App settings card was left open.
     private const val GROUP = "group" // A tap on a room groups the speakers.
+    private const val SKIP = "skip" // Seconds per tap of a quick skip button, in steps of 5; 0: no such buttons.
 
     private const val DEVICES = "devices" // The main screen's file, beside the speakers' and servers' addresses.
     private const val ROOM = "room" // A room among those that play together: theirs is the group the player controls.
@@ -48,6 +49,11 @@ object Prefs {
     fun group(c: Context) = prefs(c).getBoolean(GROUP, false)
 
     fun group(c: Context, g: Boolean) = prefs(c).edit().putBoolean(GROUP, g).apply()
+
+    // Off at first: Now Playing keeps its five controls until a step is chosen.
+    fun skip(c: Context) = prefs(c).getInt(SKIP, 0).coerceIn(0, 60) / 5 * 5
+
+    fun skip(c: Context, s: Int) = prefs(c).edit().putInt(SKIP, s.coerceIn(0, 60)).apply()
 
     fun appearance(c: Context) = prefs(c).getInt(APPEARANCE, 0)
 

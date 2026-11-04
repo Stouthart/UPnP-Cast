@@ -12,6 +12,7 @@ import android.text.style.ForegroundColorSpan
 import android.view.KeyEvent
 import android.view.View
 import android.widget.ImageView
+import android.widget.LinearLayout
 import android.widget.SeekBar
 import android.widget.TextView
 import android.widget.Toast
@@ -95,6 +96,7 @@ class Player(private val a: Activity) {
             // clears and the volume buttons wait until this room's own is read.
             wanted = -1
             sending = false
+            skips = 0
             quiet = 0L
             level.text = ""
             heard = false
@@ -158,6 +160,8 @@ class Player(private val a: Activity) {
     private val remaining: TextView? = a.findViewById(R.id.player_remaining)
     private val shuffle: ImageView? = a.findViewById(R.id.player_shuffle)
     private val repeat: ImageView? = a.findViewById(R.id.player_repeat)
+    private val back: View? = a.findViewById(R.id.player_back)
+    private val forward: View? = a.findViewById(R.id.player_forward)
     private val full = progress != null
 
     // Now Playing's cover by the screen's short side, which covers its widest in either orientation; the mini player
@@ -188,6 +192,8 @@ class Player(private val a: Activity) {
     private var wanted = -1 // The volume still to send; one SetVolume is in flight at most.
     private var landed = 0L // The uptime the last SetVolume came back.
     private var sending = false
+    private var skips = 0 // Quick skip seconds tapped while one is out: they go as one once it's back.
+    private var skipping = false
     private var keyed = false // The last volume button press went to the room, so its release does too.
 
     // This room's volume was read since the room or the screen came: what another screen showed may be old, and the
@@ -250,6 +256,60 @@ class Player(private val a: Activity) {
                 seek(s.progress)
             }
         })
+        // Now Playing's controls spread evenly, by what each draws; again whenever the row's width changes.
+        if (full) {
+            val bar = toggle.parent.parent as LinearLayout
+            bar.addOnLayoutChangeListener { _, l, _, r, _, ol, _, or, _ ->
+                if (r - l != or - ol) bar.post { spread(bar) } // Not inside the layout pass.
+            }
+        }
+        // Quick skip, by the step chosen in Settings: without one, the row has its five.
+        val s = Prefs.skip(a)
+        if (s > 0 && back != null && forward != null) {
+            row(s)
+            back.setOnClickListener { skip(-s) }
+            forward.setOnClickListener { skip(s) }
+        }
+    }
+
+    /**
+     * The quick skip buttons beside Play, the step in their arrows; spread() makes room for them, as for the five.
+     */
+    private fun row(s: Int) {
+        back?.visibility = View.VISIBLE
+        forward?.visibility = View.VISIBLE
+        back?.contentDescription = a.resources.getQuantityString(R.plurals.skip_back, s, s)
+        forward?.contentDescription = a.resources.getQuantityString(R.plurals.skip_forward, s, s)
+        a.findViewById<TextView>(R.id.player_back_step).text = s.toString()
+        a.findViewById<TextView>(R.id.player_forward_step).text = s.toString()
+    }
+
+    // What each draws, in dp, left to right: the icon's size times its path's width in its 24-unit grid (Shuffle 16,
+    // the arrows 16, Repeat 18), and the circles: Previous and Next's 52, Play's 72.
+    private val drawn = floatArrayOf(28 * 16 / 24f, 52f, 32 * 16 / 24f, 72f, 32 * 16 / 24f, 52f, 28 * 18 / 24f)
+
+    /**
+     * Each button shown as wide as what it draws plus one gap, half a gap at the ends, so the room between them is
+     * the same whether five show or seven, and the circles sit midway; its height keeps the icon's size.
+     */
+    private fun spread(bar: LinearLayout) {
+        val d = a.resources.displayMetrics.density
+        var sum = 0f
+        var n = 0
+        for (i in 0 until bar.childCount) if (bar.getChildAt(i).visibility == View.VISIBLE) {
+            sum += drawn[i]
+            n++
+        }
+        val gap = ((bar.width / d - sum) / n).coerceAtLeast(0f)
+        for (i in 0 until bar.childCount) {
+            val v = bar.getChildAt(i)
+            if (v.visibility != View.VISIBLE) continue
+            v.layoutParams = (v.layoutParams as LinearLayout.LayoutParams).apply {
+                width = ((drawn[i] + gap) * d).toInt()
+                weight = 0f
+            }
+            if (v is ImageView) v.setPadding(0, v.paddingTop, 0, v.paddingBottom)
+        }
     }
 
     private fun seek(to: Int) {
@@ -259,6 +319,46 @@ class Player(private val a: Activity) {
         settle = at + SETTLE_MS
         retick()
         command { Sonos.seek(it, to) }
+    }
+
+    /** [d] seconds on or back: the clock goes along at once, within the track, and the speaker from where it is. */
+    private fun skip(d: Int) {
+        if (progress?.isEnabled != true) return
+        val now = SystemClock.uptimeMillis()
+        base = ((if (running) base + (now - at) else base) + d * 1000L).coerceIn(0, length * 1000L)
+        at = now
+        quiet = now + QUIET_MS
+        settle = now + SETTLE_MS
+        retick()
+        skips += d
+        if (!skipping) skipNow()
+    }
+
+    // One relative Seek out at a time: taps meanwhile add up and go as one once it's back.
+    private fun skipNow() {
+        val d = skips
+        if (room == null || d == 0) return
+        skips = 0
+        skipping = true
+        command { r ->
+            try {
+                Sonos.skip(r, d)
+            } finally {
+                ui.post {
+                    skipping = false
+                    skipNow()
+                }
+            }
+        }
+    }
+
+    /** Quick skip only where the bar seeks: a track with a length, not the TV, a radio stream or paused Spotify. */
+    private fun skippable(on: Boolean) {
+        for (v in arrayOf(back, forward)) {
+            v ?: continue
+            v.isEnabled = on
+            v.alpha = if (on) 1f else 0.5f
+        }
     }
 
     /** Asks the room at the Polling interval from the main screen: 2 s by default, up to 10 s. Watches WiFi meanwhile. */
@@ -273,15 +373,20 @@ class Player(private val a: Activity) {
         exec = Executors.newSingleThreadScheduledExecutor().apply { scheduleWithFixedDelay(::poll, 0, s, TimeUnit.SECONDS) }
         volumes = Executors.newSingleThreadExecutor()
         heard = false // While away, the volume may have changed elsewhere: the buttons wait until it's read again.
+        // stop() halted the clock's ticks, and an answer that agrees with the clock doesn't restart them: back from
+        // another app within the same track, the progress would stand still. Where the clock is now, ticking on.
+        retick()
     }
 
     fun stop() {
         Lan.stop(lan)
         live = false
         gen++
-        // shutdownNow drops a volume change still queued, so nothing is in flight any more as far as the slider goes.
+        // shutdownNow drops a volume change or quick skip still queued, so nothing is in flight any more.
         wanted = -1
         sending = false
+        skips = 0
+        skipping = false
         exec?.shutdownNow()
         exec = null
         volumes?.shutdownNow()
@@ -539,10 +644,17 @@ class Player(private val a: Activity) {
         if (now != shown) {
             shown = now
             title.text = name
+            title.setTextColor(a.getColor(if (answer == null) R.color.warning else R.color.text)) // No WiFi, or no room.
             meta.text = SpannableString(detail).apply {
                 if (r.name.isNotEmpty()) setSpan(ForegroundColorSpan(a.getColor(R.color.accent_text)), 0, r.name.length, 0)
             }
-            format?.text = quality
+            // A lossless track's format in green: it reaches the speaker as it was recorded.
+            format?.text = SpannableString(quality).apply {
+                val f = t?.format.orEmpty()
+                if (t?.lossless == true && f.isNotEmpty() && quality.endsWith(f)) {
+                    setSpan(ForegroundColorSpan(a.getColor(R.color.success)), quality.length - f.length, quality.length, 0)
+                }
+            }
             covers.show(art, cover, R.drawable.ic_music)
         }
         if (answer == null) return
@@ -574,6 +686,7 @@ class Player(private val a: Activity) {
                 return@let
             }
             it.isEnabled = p.duration > 0
+            skippable(it.isEnabled)
             it.max = maxOf(p.duration, 1)
             val play = answer.state == "PLAYING"
             val to = when {

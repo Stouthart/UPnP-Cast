@@ -2,6 +2,7 @@ package nl.stouthart.upnpcast
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Matrix
 import android.os.Handler
 import android.os.Looper
 import android.util.LruCache
@@ -94,18 +95,25 @@ class Art(val px: Int, private val also: Int = 0, private val loaded: (String) -
         main.removeCallbacksAndMessages(null)
     }
 
-    /** Decoded at the smallest power-of-two step that still covers [px], then scaled to it. */
+    /**
+     * Decoded at the smallest power-of-two step that still covers [px], then its centre square scaled to it: every
+     * cover is a square that shows the centre, so a wide one keeps no more than a square one.
+     */
     private fun thumb(b: ByteArray, px: Int): Bitmap? {
         val o = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeByteArray(b, 0, b.size, o)
         val w = o.outWidth
         val h = o.outHeight
         if (w !in 1..8192 || h !in 1..8192) return null // It comes from the network: no decompression bombs.
+        // Nor more pixels than a 2:1 cover at full quality: 8192 × 2399 at Now Playing's size was 75 MiB decoded.
+        val most = 8L * px * px
         var s = 1
-        while (minOf(w, h) / (s * 2) >= px) s *= 2
+        while (minOf(w, h) / (s * 2) >= px || w.toLong() / s * (h / s) > most) s *= 2
         val d = BitmapFactory.decodeByteArray(b, 0, b.size, BitmapFactory.Options().apply { inSampleSize = s }) ?: return null
         val m = minOf(d.width, d.height)
-        if (m <= px) return d
-        return Bitmap.createScaledBitmap(d, d.width * px / m, d.height * px / m, true).also { if (it !== d) d.recycle() }
+        if (d.width == d.height && m <= px) return d
+        val k = minOf(px, m).toFloat() / m
+        val x = Matrix().apply { setScale(k, k) }
+        return Bitmap.createBitmap(d, (d.width - m) / 2, (d.height - m) / 2, m, m, x, true).also { if (it !== d) d.recycle() }
     }
 }

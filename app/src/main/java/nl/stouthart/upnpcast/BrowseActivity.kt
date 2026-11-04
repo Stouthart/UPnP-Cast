@@ -1,8 +1,10 @@
 package nl.stouthart.upnpcast
 
 import android.app.Activity
+import android.content.res.ColorStateList
 import android.os.Bundle
 import android.os.SystemClock
+import android.text.SpannableString
 import android.text.StaticLayout
 import android.text.TextPaint
 import android.util.Log
@@ -10,6 +12,7 @@ import android.util.TypedValue
 import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup
+import android.text.style.ForegroundColorSpan
 import android.widget.BaseAdapter
 import android.widget.GridView
 import android.widget.ImageView
@@ -71,7 +74,7 @@ class BrowseActivity : Activity() {
     private lateinit var summary: TextView
     private lateinit var list: GridView
     private lateinit var play: View
-    private lateinit var scan: View
+    private lateinit var scan: ImageView
     private var scanning = false // A scan of the Music library is being followed: main thread only.
     @Volatile
     private var started = false // The screen shows: a scan is followed only then, nothing runs behind it.
@@ -102,8 +105,18 @@ class BrowseActivity : Activity() {
             val h = v.tag as Holder
             val e = level.items[i]
             h.name.text = e.title
+            // A row greyed out above 48 kHz has its format in the warning colour, at full strength: why it can't play.
+            val high = !tiles && !e.container && (e.res?.hz ?: 0) > MAX_HZ
             // A tile is too narrow for a track's artist and format as well: its length alone; a row has the room.
-            h.meta.text = if (tiles && !e.container) e.res?.time().orEmpty() else e.meta
+            h.meta.text = when {
+                tiles && !e.container -> e.res?.time().orEmpty()
+                high -> SpannableString(e.meta).apply {
+                    val f = e.res!!.format()
+                    val at = e.meta.lastIndexOf(f)
+                    if (at >= 0) setSpan(ForegroundColorSpan(getColor(R.color.warning)), at, at + f.length, 0)
+                }
+                else -> e.meta
+            }
             // A list row hides an empty line, else the title sits off-centre; a tile keeps it, so a row of tiles lines up.
             if (!tiles) h.meta.visibility = if (e.meta.isEmpty()) View.GONE else View.VISIBLE
             h.chevron?.visibility = if (e.container) View.VISIBLE else View.GONE
@@ -112,7 +125,10 @@ class BrowseActivity : Activity() {
             h.more.visibility = if (queueable) View.VISIBLE else View.GONE
             h.more.setOnClickListener { menu(it, e) }
             (if (tiles) tileArt!! else art).show(h.art, e.art, if (e.container) R.drawable.ic_folder else R.drawable.ic_music)
-            v.alpha = if (e.container || e.playable) 1f else 0.5f
+            val dim = if (e.container || e.playable) 1f else 0.5f
+            h.art.alpha = dim
+            h.name.alpha = dim
+            h.meta.alpha = if (high) 1f else dim
             return v
         }
     }
@@ -248,7 +264,8 @@ class BrowseActivity : Activity() {
         if (scanning) return
         scanning = true
         scan.isEnabled = false
-        scan.alpha = 0.5f
+        // Blue while it scans, as Shuffle while it's on; grey again once done, as Browse's other buttons.
+        scan.imageTintList = ColorStateList.valueOf(getColor(R.color.accent_text))
         summary()
         later(pool) {
             val done = runCatching {
@@ -260,7 +277,7 @@ class BrowseActivity : Activity() {
                 if (isDestroyed) return@runOnUiThread
                 scanning = false
                 scan.isEnabled = true
-                scan.alpha = 1f
+                scan.imageTintList = null
                 summary()
                 done.onSuccess { if (it) toast(getString(R.string.scan_complete)) }.onFailure {
                     Log.i(TAG, "Scan on ${server.host}: $it")
@@ -391,6 +408,9 @@ class BrowseActivity : Activity() {
         val top = server.library && stack.size == 1
         play.visibility = if (l.items.any { !it.container && it.playable }) View.VISIBLE else View.GONE
         scan.visibility = if (top) View.VISIBLE else View.GONE
+        // The count in green once it's known; the server not answering in the warning colour; grey while loading.
+        val busy = (top && scanning) || l.total < 0
+        summary.setTextColor(getColor(if (busy) R.color.text2 else if (l.error != null) R.color.warning else R.color.success))
         summary.text = when {
             top && scanning -> getString(R.string.scanning)
             l.error != null -> l.error
@@ -424,6 +444,7 @@ class BrowseActivity : Activity() {
     private fun load(l: Level, from: Int = 0) {
         if (!started) return // Before the first start, as from onCreate: onStart's retry() begins it.
         l.paging = true
+        var count = l.items.size // The entries in, as appended: a server's own count may say otherwise.
         later(pool) {
             var start = from
             var pages = 0
@@ -446,10 +467,12 @@ class BrowseActivity : Activity() {
                     }
                     return@later
                 }
-                for (e in page.entries) e.meta = meta(resources, e)
+                val got = page.entries.take(MAX_ITEMS - count)
+                count += got.size
+                for (e in got) e.meta = meta(resources, e)
                 runOnUiThread {
                     if (!l.alive) return@runOnUiThread
-                    l.items += page.entries
+                    l.items += got
                     l.total = page.total
                     if (l === level) {
                         adapter.notifyDataSetChanged()
@@ -457,9 +480,9 @@ class BrowseActivity : Activity() {
                     }
                 }
                 // Only forward and within bounds: a page of nothing or a negative count ends it, as do MAX_ITEMS
-                // entries or MAX_PAGES pages, so a server can't keep it going.
+                // entries, counted as they came, or MAX_PAGES pages, so a server can't keep it going.
                 val end = page.returned <= 0 || start + page.returned >= page.total ||
-                    start + page.returned >= MAX_ITEMS || ++pages >= MAX_PAGES
+                    count >= MAX_ITEMS || ++pages >= MAX_PAGES
                 start += maxOf(page.returned, 0)
                 if (end) {
                     runOnUiThread {

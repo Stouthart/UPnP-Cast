@@ -81,21 +81,63 @@
     <string name="regrouped">The rooms changed meanwhile. Try again.</string>
     <string name="cant_play_reach">Couldn\'t play %1$s. Couldn\'t connect to %2$s.</string>
 
-    <string name="settings">Settings</string>
-    <string name="expanded">Expanded</string> <!-- The Settings card's state, for TalkBack. -->
+    <string name="app_settings">App settings</string> <!-- The Sonos app's "App preferences", by Room settings. -->
+
+    <!-- Room settings: the rooms' own, in the Sonos app's words (settings_room_*, settings_common_*). Sonos has no name
+         for the way in, nor for Trueplay's two states. -->
+    <string name="room_settings">Room settings</string>
+    <string name="trueplay" translatable="false">Trueplay</string>
+    <string name="trueplay_tuning">Trueplay tuning</string>
+    <string name="tuned">Tuned for this room.</string>
+    <string name="not_tuned">Not tuned yet: tune this room in the Sonos app.</string>
+    <string name="eq">EQ</string>
+    <string name="bass">Bass</string>
+    <string name="treble">Treble</string>
+    <string name="height_level">Height level</string>
+    <string name="loudness">Loudness</string>
+    <string name="volume_limit">Volume limit</string>
+    <string name="percent">%1$d%%</string>
+    <string name="sub_audio">Sub audio</string>
+    <string name="sub">Sub</string>
+    <string name="sub_level">Sub level</string>
+    <string name="phase_control">Phase control</string>
+    <string name="phase_0" translatable="false">0°</string>
+    <string name="phase_180" translatable="false">180°</string>
+    <string name="home_theater">Home theater</string>
+    <string name="speech_enhancement">Speech Enhancement</string>
+    <string name="low">Low</string>
+    <string name="medium">Medium</string>
+    <string name="high">High</string>
+    <string name="max">Max</string>
+    <string name="night_sound">Night Sound</string>
+    <string name="tv_dialog_sync">TV dialog sync</string>
+    <string name="hardware">Hardware</string>
+    <string name="status_light">Status Light</string> <!-- As the Sonos app shows it; not in its strings file. -->
+    <string name="touch_controls">Touch controls</string>
+    <string name="setting_refused">%1$s didn\'t take that setting.</string>
+    <string name="expanded">Expanded</string> <!-- The App settings card's state, and a room's in Room settings, for TalkBack. -->
     <string name="collapsed">Collapsed</string>
-    <string name="group_rooms">Group rooms</string> <!-- Sonos's "Group"; its settings_common_off/on below. -->
+    <string name="group_rooms">Group rooms</string> <!-- Sonos's "Group". -->
     <string name="group_title">Group %1$s?</string>
     <string name="group_message">%1$s is playing something else. It will stop that and play along with %2$s.</string>
     <string name="group">Group</string>
-    <string name="off">Off</string>
-    <string name="on">On</string>
+    <string name="off">Off</string> <!-- Sonos's settings_common_off. -->
     <string name="appearance">Appearance</string>
     <string name="system_default">System default</string>
     <string name="light_mode">Light mode</string>
     <string name="dark_mode">Dark mode</string>
     <string name="volume_step">Volume button step</string> <!-- UAPP's "volume button"; Sonos has no such setting. -->
     <string name="step">±%1$d</string>
+    <string name="quick_skip">Quick skip</string> <!-- Sonos's now_playing_quick_skip buttons; it has no setting for them. -->
+    <string name="skip_step">±%1$d s</string>
+    <plurals name="skip_back">
+        <item quantity="one">Quick skip back %1$d second</item>
+        <item quantity="other">Quick skip back %1$d seconds</item>
+    </plurals>
+    <plurals name="skip_forward">
+        <item quantity="one">Quick skip forward %1$d second</item>
+        <item quantity="other">Quick skip forward %1$d seconds</item>
+    </plurals>
     <string name="polling">Polling interval</string>
     <string name="seconds">%1$d s</string>
 

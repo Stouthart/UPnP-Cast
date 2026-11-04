@@ -1,0 +1,228 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Room settings, a sheet as Now Playing: the rooms, one open at a time with its own settings in cards right under its
+     row, as the Sonos app has them. A card, or a setting in one, shows once the room's player has answered for it; one
+     it hasn't got stays hidden.
+     The cards don't clip: slider rows reach past their sides to line up with the mini player, and a switch last in a
+     card reaches into its padding, by the margins that keep its text on the labels' rhythm. -->
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/scroll"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fillViewport="true"
+    android:fitsSystemWindows="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:paddingHorizontal="16dp"
+        android:paddingTop="8dp"
+        android:paddingBottom="24dp">
+
+        <!-- Closes the sheet, as on Now Playing; a swipe down does the same. -->
+        <ImageView
+            android:id="@+id/close"
+            android:layout_width="56dp"
+            android:layout_height="40dp"
+            android:layout_gravity="center_horizontal"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/close"
+            android:scaleType="center"
+            android:src="@drawable/ic_down" />
+
+        <TextView
+            style="@style/Title"
+            android:layout_marginStart="4dp"
+            android:layout_marginTop="4dp"
+            android:text="@string/room_settings"
+            android:textSize="22sp" />
+
+        <!-- A row per room; the open room's settings, below, go right under its row. -->
+        <LinearLayout
+            android:id="@+id/rooms"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical" />
+
+        <LinearLayout
+            android:id="@+id/page"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingBottom="4dp"
+            android:visibility="gone">
+
+            <!-- Loading…, or that the room couldn't be reached. -->
+            <TextView
+                android:id="@+id/status"
+                style="@style/Summary"
+                android:layout_marginTop="16dp"
+                android:layout_marginStart="4dp" />
+
+            <LinearLayout
+                android:id="@+id/trueplay_card"
+                style="@style/Card"
+                android:clipChildren="false"
+                android:clipToPadding="false"
+                android:layout_marginTop="16dp"
+                android:visibility="gone">
+
+                <TextView
+                    style="@style/Title"
+                    android:text="@string/trueplay" />
+
+                <TextView
+                    android:id="@+id/tuned"
+                    style="@style/Summary"
+                    android:layout_marginTop="4dp" />
+
+                <Switch
+                    android:id="@+id/trueplay"
+                    style="@style/Toggle"
+                    android:text="@string/trueplay_tuning" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/eq_card"
+                style="@style/Card"
+                android:clipChildren="false"
+                android:clipToPadding="false"
+                android:layout_marginTop="16dp"
+                android:visibility="gone">
+
+                <TextView
+                    style="@style/Title"
+                    android:text="@string/eq" />
+
+                <include
+                    android:id="@+id/bass"
+                    layout="@layout/level" />
+
+                <include
+                    android:id="@+id/treble"
+                    layout="@layout/level" />
+
+                <include
+                    android:id="@+id/height"
+                    layout="@layout/level" />
+
+                <Switch
+                    android:id="@+id/loudness"
+                    style="@style/Toggle"
+                    android:text="@string/loudness" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/limit_card"
+                style="@style/Card"
+                android:clipChildren="false"
+                android:clipToPadding="false"
+                android:layout_marginTop="16dp"
+                android:visibility="gone">
+
+                <include
+                    android:id="@+id/limit"
+                    layout="@layout/level"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="0dp" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/sub_card"
+                style="@style/Card"
+                android:clipChildren="false"
+                android:clipToPadding="false"
+                android:layout_marginTop="16dp"
+                android:visibility="gone">
+
+                <TextView
+                    style="@style/Title"
+                    android:text="@string/sub_audio" />
+
+                <Switch
+                    android:id="@+id/sub"
+                    style="@style/Toggle"
+                    android:text="@string/sub" />
+
+                <include
+                    android:id="@+id/sub_level"
+                    layout="@layout/level" />
+
+                <!-- Only while Trueplay is off: Trueplay sets the phase itself. -->
+                <TextView
+                    android:id="@+id/phase_label"
+                    style="@style/Label"
+                    android:layout_marginTop="20dp"
+                    android:text="@string/phase_control" />
+
+                <LinearLayout
+                    android:id="@+id/phase"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:orientation="horizontal">
+
+                    <TextView
+                        style="@style/Segment"
+                        android:layout_marginEnd="8dp"
+                        android:text="@string/phase_0" />
+
+                    <TextView
+                        style="@style/Segment"
+                        android:text="@string/phase_180" />
+                </LinearLayout>
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/theater_card"
+                style="@style/Card"
+                android:clipChildren="false"
+                android:clipToPadding="false"
+                android:layout_marginTop="16dp"
+                android:visibility="gone">
+
+                <TextView
+                    style="@style/Title"
+                    android:text="@string/home_theater" />
+
+                <!-- Off and the speaker's four levels, by name. -->
+                <include
+                    android:id="@+id/speech"
+                    layout="@layout/level" />
+
+                <Switch
+                    android:id="@+id/night"
+                    style="@style/Toggle"
+                    android:text="@string/night_sound" />
+
+                <include
+                    android:id="@+id/dialog"
+                    layout="@layout/level" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/hardware_card"
+                style="@style/Card"
+                android:clipChildren="false"
+                android:clipToPadding="false"
+                android:layout_marginTop="16dp"
+                android:visibility="gone">
+
+                <TextView
+                    style="@style/Title"
+                    android:text="@string/hardware" />
+
+                <Switch
+                    android:id="@+id/led"
+                    style="@style/Toggle"
+                    android:text="@string/status_light" />
+
+                <Switch
+                    android:id="@+id/touch"
+                    style="@style/Toggle"
+                    android:text="@string/touch_controls" />
+            </LinearLayout>
+        </LinearLayout>
+    </LinearLayout>
+</ScrollView>

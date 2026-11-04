@@ -146,7 +146,7 @@ class QueueActivity : Activity() {
             clear.visibility = View.GONE
             adapter.notifyDataSetChanged()
         }
-        if (items.isEmpty()) summary.setText(R.string.loading)
+        if (items.isEmpty()) summary(getString(R.string.loading), R.color.text2)
         art.retry() // Covers that failed, as without WiFi, get another go when the rows show again.
         later(work) {
             val q = try {
@@ -158,17 +158,20 @@ class QueueActivity : Activity() {
             q?.forEach { it.meta = meta(resources, it) }
             runOnUiThread {
                 if (g != gen) return@runOnUiThread
-                if (q == null) {
-                    summary.text = unreachable(room.name)
-                    return@runOnUiThread
-                }
+                if (q == null) return@runOnUiThread summary(unreachable(room.name), R.color.warning)
                 items = q
                 rows = room
-                summary.text = resources.getQuantityString(R.plurals.track_count, q.size, q.size)
+                summary(resources.getQuantityString(R.plurals.track_count, q.size, q.size), R.color.success)
                 clear.visibility = if (q.isEmpty()) View.GONE else View.VISIBLE
                 adapter.notifyDataSetChanged()
             }
         }
+    }
+
+    /** The count line, in [color]: success with the queue in, warning when the room didn't answer, grey while loading. */
+    private fun summary(text: String, color: Int) {
+        summary.text = text
+        summary.setTextColor(getColor(color))
     }
 
     private fun jump(n: Int) {

@@ -109,12 +109,14 @@
                 android:textSize="14sp" />
         </LinearLayout>
 
-        <!-- Shuffle, Previous, Play/Pause, Next, Repeat, spread over the width as in the Sonos app. -->
+        <!-- Shuffle, Previous, Play/Pause, Next, Repeat, spread over the width as in the Sonos app; with a Quick skip
+             step (Settings), its two buttons beside Play. The shares below hold until Player.spread() gives each the
+             width it draws plus one even gap. Centred: the buttons take their width in whole pixels. -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="16dp"
-            android:gravity="center_vertical"
+            android:gravity="center"
             android:orientation="horizontal">
 
             <ImageView
@@ -128,8 +130,30 @@
             <ImageView
                 android:id="@+id/player_previous"
                 style="@style/Transport"
+                android:background="@drawable/circle_quiet"
                 android:contentDescription="@string/previous"
+                android:foreground="?android:attr/selectableItemBackgroundBorderless"
                 android:src="@drawable/ic_previous" />
+
+            <!-- The arrow at 32dp, between Previous's 36 and Shuffle's 28; the step in its circle, a little below the
+                 middle as the circle is. -->
+            <FrameLayout
+                android:id="@+id/player_back"
+                style="@style/Skip">
+
+                <ImageView
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:importantForAccessibility="no"
+                    android:paddingHorizontal="2dp"
+                    android:paddingVertical="12dp"
+                    android:scaleType="fitCenter"
+                    android:src="@drawable/ic_skip_back" />
+
+                <TextView
+                    android:id="@+id/player_back_step"
+                    style="@style/SkipStep" />
+            </FrameLayout>
 
             <!-- 1.5 shares: a fifth of a phone's row is narrower than the 72dp circle, which then got its sides cut. -->
             <FrameLayout
@@ -150,10 +174,30 @@
                     android:src="@drawable/ic_play" />
             </FrameLayout>
 
+            <FrameLayout
+                android:id="@+id/player_forward"
+                style="@style/Skip">
+
+                <ImageView
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:importantForAccessibility="no"
+                    android:paddingHorizontal="2dp"
+                    android:paddingVertical="12dp"
+                    android:scaleType="fitCenter"
+                    android:src="@drawable/ic_skip_forward" />
+
+                <TextView
+                    android:id="@+id/player_forward_step"
+                    style="@style/SkipStep" />
+            </FrameLayout>
+
             <ImageView
                 android:id="@+id/player_next"
                 style="@style/Transport"
+                android:background="@drawable/circle_quiet"
                 android:contentDescription="@string/next"
+                android:foreground="?android:attr/selectableItemBackgroundBorderless"
                 android:src="@drawable/ic_next" />
 
             <ImageView

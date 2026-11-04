@@ -1,0 +1,12 @@
+<!-- Previous and Next on Now Playing: a quiet grey circle, 52dp, centred whatever the button's share of the row, below
+     Play's 72dp accent one. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item
+        android:width="52dp"
+        android:height="52dp"
+        android:gravity="center">
+        <shape android:shape="oval">
+            <solid android:color="@color/panel" />
+        </shape>
+    </item>
+</layer-list>

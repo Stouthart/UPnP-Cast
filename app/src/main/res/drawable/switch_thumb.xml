@@ -1,0 +1,42 @@
+<!-- A switch's thumb in a 26 x 32dp box, half the track's width: a large dot in the accent's own white while on, a
+     small grey one while off. -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_checked="true">
+        <layer-list>
+            <item
+                android:width="26dp"
+                android:height="32dp">
+                <shape android:shape="rectangle">
+                    <solid android:color="@android:color/transparent" />
+                </shape>
+            </item>
+            <item
+                android:width="22dp"
+                android:height="22dp"
+                android:gravity="center">
+                <shape android:shape="oval">
+                    <solid android:color="@color/on_accent" />
+                </shape>
+            </item>
+        </layer-list>
+    </item>
+    <item>
+        <layer-list>
+            <item
+                android:width="26dp"
+                android:height="32dp">
+                <shape android:shape="rectangle">
+                    <solid android:color="@android:color/transparent" />
+                </shape>
+            </item>
+            <item
+                android:width="16dp"
+                android:height="16dp"
+                android:gravity="center">
+                <shape android:shape="oval">
+                    <solid android:color="@color/text2" />
+                </shape>
+            </item>
+        </layer-list>
+    </item>
+</selector>

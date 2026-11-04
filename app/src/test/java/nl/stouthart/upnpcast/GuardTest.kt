@@ -47,6 +47,8 @@ class GuardTest {
             Locale.setDefault(Locale.forLanguageTag("ar-EG")) // Arabic-Indic digits by default.
             assertEquals("0:01:30", hms(90))
             assertEquals("1:02:03", hms(3723))
+            assertEquals("+0:00:15", delta(15)) // Quick skip's relative Seek.
+            assertEquals("-0:01:00", delta(-60))
         } finally {
             Locale.setDefault(was)
         }

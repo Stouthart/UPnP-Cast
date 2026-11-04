@@ -40,6 +40,11 @@
             android:exported="false" />
 
         <activity
+            android:name=".RoomActivity"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize"
+            android:exported="false" />
+
+        <activity
             android:name=".QueueActivity"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize"
             android:exported="false" />

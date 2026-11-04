@@ -54,7 +54,31 @@
         <item name="android:scaleType">fitCenter</item>
     </style>
 
-    <!-- A choice in a row of equal shares (Group rooms' two, Appearance's three). -->
+    <!-- A quick skip button, a Transport share of the row: gone until Settings has a step. -->
+    <style name="Skip">
+        <item name="android:layout_width">0dp</item>
+        <item name="android:layout_height">56dp</item>
+        <item name="android:layout_weight">1</item>
+        <item name="android:background">?android:attr/selectableItemBackgroundBorderless</item>
+        <item name="android:clickable">true</item>
+        <item name="android:focusable">true</item>
+        <item name="android:visibility">gone</item>
+    </style>
+
+    <!-- Its step, in the arrow's circle, which sits a little below the middle. -->
+    <style name="SkipStep">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_gravity">center</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:importantForAccessibility">no</item>
+        <item name="android:includeFontPadding">false</item>
+        <item name="android:paddingTop">4dp</item>
+        <item name="android:textColor">@color/text</item>
+        <item name="android:textSize">10sp</item>
+    </style>
+
+    <!-- A choice in a row of equal shares (Appearance's three; in Room settings, Phase control's two). -->
     <style name="Segment">
         <item name="android:layout_width">0dp</item>
         <item name="android:layout_height">48dp</item> <!-- One height for segments and buttons, in both apps. -->
@@ -65,10 +89,30 @@
         <item name="android:maxLines">1</item>
         <item name="android:paddingHorizontal">6dp</item>
         <item name="android:textColor">@color/text</item>
-        <item name="android:textSize">14sp</item> <!-- At most: MainActivity shrinks Appearance's three when one doesn't fit. -->
+        <item name="android:textSize">14sp</item> <!-- At most: fit() shrinks a row's labels when one doesn't fit. -->
     </style>
 
-    <!-- A setting's name inside the Settings card. -->
+    <!-- An on/off setting: a Switch's own text as the label, the app's track and thumb on the right, the row 48dp to tap.
+         Its margins put that text where a Label's would be, 20dp from what's above and below: the 48dp row has about
+         13dp around its 16sp text (as the App settings header's -10dp do for its title). -->
+    <style name="Toggle">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginTop">7dp</item>
+        <item name="android:layout_marginBottom">-13dp</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:minHeight">48dp</item>
+        <item name="android:showText">false</item>
+        <item name="android:splitTrack">false</item>
+        <item name="android:switchMinWidth">52dp</item>
+        <item name="android:switchPadding">16dp</item>
+        <item name="android:textColor">@color/text</item>
+        <item name="android:textSize">16sp</item>
+        <item name="android:thumb">@drawable/switch_thumb</item>
+        <item name="android:track">@drawable/switch_track</item>
+    </style>
+
+    <!-- A setting's name, in App settings and Room settings. -->
     <style name="Label">
         <item name="android:layout_width">wrap_content</item>
         <item name="android:layout_height">wrap_content</item>

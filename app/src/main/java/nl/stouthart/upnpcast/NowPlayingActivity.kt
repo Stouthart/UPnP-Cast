@@ -1,17 +1,11 @@
 package nl.stouthart.upnpcast
 
-import android.annotation.SuppressLint
 import android.app.Activity
 import android.content.res.Configuration
 import android.os.Bundle
-import android.view.GestureDetector
 import android.view.KeyEvent
-import android.view.MotionEvent
 import android.view.View
 import android.widget.ScrollView
-import kotlin.math.abs
-
-private const val SWIPE_DP = 1000 // dp/s downwards that close the sheet: a flick, not a slow scroll.
 
 /**
  * The cover's side: [want] within [min]..[max], where a small window (split screen, a short one) can make [max] the
@@ -23,30 +17,13 @@ fun coverSide(want: Int, min: Int, max: Int) = want.coerceIn(minOf(min, max), ma
 class NowPlayingActivity : Activity() {
     private lateinit var player: Player
 
-    @SuppressLint("ClickableViewAccessibility") // The swipe only adds to ⌄, which is the accessible way to close.
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
         val room = Player.room(intent) ?: return finish()
-        // A sheet: up from the bottom when it opens; down again on ⌄, a swipe down or Back.
-        overrideActivityTransition(OVERRIDE_TRANSITION_OPEN, R.anim.sheet_up, R.anim.hold)
-        overrideActivityTransition(OVERRIDE_TRANSITION_CLOSE, R.anim.hold, R.anim.sheet_down)
         setContentView(R.layout.activity_now_playing)
+        sheet(findViewById(R.id.scroll), findViewById(R.id.close))
         size()
         fit()
-        findViewById<View>(R.id.close).setOnClickListener { finish() }
-        val scroll: ScrollView = findViewById(R.id.scroll)
-        val swipe = GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
-            override fun onFling(e1: MotionEvent?, e2: MotionEvent, vx: Float, vy: Float): Boolean {
-                // Only at the top: further down, a swipe down scrolls back up first.
-                if (scroll.scrollY > 0 || vy < SWIPE_DP * resources.displayMetrics.density || vy < 2 * abs(vx)) return false
-                finish()
-                return true
-            }
-        })
-        scroll.setOnTouchListener { _, e ->
-            swipe.onTouchEvent(e)
-            false // The ScrollView still scrolls as ever.
-        }
         player = Player(this).apply {
             hosts += Player.hosts(intent)
             this.room = room

@@ -9,7 +9,6 @@ import android.content.Intent
 import android.content.pm.PackageManager.PERMISSION_GRANTED
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import android.graphics.Paint
 import android.graphics.Rect
 import android.net.Uri
 import android.os.Build
@@ -17,13 +16,13 @@ import android.os.Bundle
 import android.os.SystemClock
 import android.provider.Settings
 import android.util.Log
-import android.util.TypedValue
 import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.SeekBar
+import android.widget.Switch
 import android.widget.TextView
 import android.widget.Toast
 import java.util.concurrent.ConcurrentHashMap
@@ -38,12 +37,6 @@ private const val KEY_SERVERS = "servers" // The servers' description URLs.
 private const val MAX_DEVICES = 32 // Per search: a device answering with endless paths can't start endless fetches.
 private const val SETTLE_MS = 350L // Between topology reads after a grouping change, until the speakers report it.
 private const val SETTLE_TRIES = 6
-
-private var View.shown: Boolean
-    get() = visibility == View.VISIBLE
-    set(v) {
-        visibility = if (v) View.VISIBLE else View.GONE
-    }
 
 /** A device's icon, refused when its size is beyond any icon's: the PNG comes from the network. */
 private fun icon(b: ByteArray): Bitmap? {
@@ -79,6 +72,10 @@ class MainActivity : Activity() {
         allow = findViewById(R.id.allow)
         serversSummary = findViewById(R.id.servers_summary)
         servers = findViewById(R.id.servers)
+        // The rooms' own settings, in a sheet; shown once a search has found rooms.
+        findViewById<View>(R.id.room_settings).setOnClickListener {
+            if (found.isNotEmpty()) startActivity(RoomActivity.intent(this, found))
+        }
         player = Player(this)
         player.onNetwork = { search() } // Another network may hold other rooms and servers; none, and the screen says so.
         player.onShown = { copyright.shown = !it } // The player takes the foot of the screen.
@@ -96,7 +93,7 @@ class MainActivity : Activity() {
         fold()
     }
 
-    /** The Settings card opens and closes with a tap on its title: closed at first, then as it was left. */
+    /** The App settings card opens and closes with a tap on its title: closed at first, then as it was left. */
     private fun fold() {
         val header: View = findViewById(R.id.settings_header)
         val body: View = findViewById(R.id.settings_body)
@@ -142,50 +139,24 @@ class MainActivity : Activity() {
             }
         }
 
-    /** A row of [choices], [chosen] filled; a tap on another calls [choose] with its index, then fills it. */
-    private fun segments(choices: Array<TextView>, chosen: Int, choose: (Int) -> Unit) {
-        fun mark(c: Int) {
-            for ((i, v) in choices.withIndex()) {
-                v.isSelected = i == c // TalkBack says "Selected" on the chosen one.
-                v.setBackgroundResource(if (i == c) R.drawable.segment_on else R.drawable.segment)
-                v.setTextColor(getColor(if (i == c) R.color.accent_text else R.color.text))
-            }
-        }
-        for ((i, v) in choices.withIndex()) v.setOnClickListener {
-            if (v.isSelected) return@setOnClickListener
-            choose(i)
-            mark(i)
-        }
-        mark(chosen)
-    }
-
     /**
-     * The Volume button step (the next press uses it), Group rooms (the next tap on a room), the Polling interval
-     * (applies at once) and Appearance (Android recreates the screens in the new mode).
+     * The Volume button step (the next press uses it), Group rooms (the next tap on a room), Quick skip (Now Playing,
+     * the next time it opens), the Polling interval (applies at once) and Appearance (Android recreates the screens in
+     * the new mode).
      */
     private fun settings() {
-        segments(arrayOf(findViewById(R.id.group_off), findViewById(R.id.group_on)), if (Prefs.group(this)) 1 else 0) {
-            Prefs.group(this, it == 1)
-            if (it == 0) single()
+        findViewById<Switch>(R.id.group).apply {
+            isChecked = Prefs.group(this@MainActivity)
+            setOnCheckedChangeListener { _, on ->
+                Prefs.group(this@MainActivity, on)
+                if (!on) single()
+            }
         }
         val choices = arrayOf<TextView>(findViewById(R.id.appearance_system), findViewById(R.id.appearance_light), findViewById(R.id.appearance_dark))
         // When the mode stays the same, as System default while the system is in that mode, nothing recreates: the
         // choice is filled in place.
         segments(choices, Prefs.appearance(this)) { Prefs.appearance(this, it) }
-        // Sonos's labels at one size: the largest, from 14 sp down to 11, at which the longest fits its third of the row.
-        choices[0].addOnLayoutChangeListener { v, l, _, r, _, ol, _, or, _ ->
-            if (r - l == or - ol) return@addOnLayoutChangeListener // Only on a new width, as at first and after rotating.
-            val t = v as TextView
-            val room = t.width - t.paddingLeft - t.paddingRight
-            val paint = Paint(t.paint)
-            var sp = 14f
-            while (sp > 11f) {
-                paint.textSize = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, sp, resources.displayMetrics)
-                if (choices.all { paint.measureText(it.text.toString()) <= room }) break
-                sp -= 0.5f
-            }
-            t.post { for (c in choices) c.setTextSize(TypedValue.COMPLEX_UNIT_SP, sp) } // Not inside the layout pass.
-        }
+        fit(choices)
 
         val step: SeekBar = findViewById(R.id.step)
         val stepValue: TextView = findViewById(R.id.step_value)
@@ -196,6 +167,26 @@ class MainActivity : Activity() {
             override fun onProgressChanged(s: SeekBar, p: Int, user: Boolean) {
                 stepValue.text = getString(R.string.step, p + 1)
                 if (user) Prefs.step(this@MainActivity, p + 1)
+            }
+
+            override fun onStartTrackingTouch(s: SeekBar) = Unit
+
+            override fun onStopTrackingTouch(s: SeekBar) = Unit
+        })
+
+        val skip: SeekBar = findViewById(R.id.skip)
+        val skipValue: TextView = findViewById(R.id.skip_value)
+        fun skipped(p: Int) {
+            skipValue.text = if (p == 0) getString(R.string.off) else getString(R.string.skip_step, p * 5)
+            skip.stateDescription = skipValue.text // TalkBack says "±15 s", not "25 percent".
+        }
+        skip.progress = Prefs.skip(this) / 5
+        skipped(skip.progress)
+        // Saved with every change, as the Volume button step.
+        skip.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(s: SeekBar, p: Int, user: Boolean) {
+                skipped(p)
+                if (user) Prefs.skip(this@MainActivity, p * 5)
             }
 
             override fun onStartTrackingTouch(s: SeekBar) = Unit
@@ -271,17 +262,17 @@ class MainActivity : Activity() {
         library = null
         allow.shown = !lanAllowed()
         if (allow.shown) {
-            roomsSummary.setText(R.string.lan_needed)
-            serversSummary.text = ""
+            roomsLine(getString(R.string.lan_needed))
+            serversLine("")
             return
         }
         if (Lan.wifi == null) { // The player hides by itself without WiFi.
-            roomsSummary.setText(R.string.connect_wifi)
-            serversSummary.text = ""
+            roomsLine(getString(R.string.connect_wifi), R.color.warning)
+            serversLine("")
             return
         }
-        roomsSummary.setText(R.string.searching)
-        serversSummary.setText(R.string.searching)
+        roomsLine(getString(R.string.searching))
+        serversLine(getString(R.string.searching))
 
         val t0 = SystemClock.elapsedRealtime()
         val seen = ConcurrentHashMap.newKeySet<String>()
@@ -379,21 +370,6 @@ class MainActivity : Activity() {
             }
         }
 
-    /** An app icon in a row's 40dp tile: 24dp, centred, as a line icon is drawn. */
-    private fun glyph(v: ImageView, res: Int) {
-        val pad = (8 * resources.displayMetrics.density).toInt()
-        v.setPadding(pad, pad, pad, pad)
-        v.setImageResource(res)
-    }
-
-    private fun productIcon(p: Product) = when (p) {
-        Product.SOUNDBAR -> R.drawable.ic_soundbar
-        Product.SUB -> R.drawable.ic_sub
-        Product.PORTABLE -> R.drawable.ic_portable
-        Product.AMP -> R.drawable.ic_amp
-        Product.SPEAKER -> R.drawable.ic_speaker
-    }
-
     private fun showRooms(t: Upnp.Topology, ms: Long) {
         Log.i(TAG, "${t.rooms.size} rooms in ${t.groups.size} groups in $ms ms")
         place(t)
@@ -411,7 +387,8 @@ class MainActivity : Activity() {
         })
         pick(t)
         rooms.shown = true
-        roomsSummary.text = resources.getQuantityString(R.plurals.room_count, t.rooms.size, t.rooms.size)
+        roomsLine(resources.getQuantityString(R.plurals.room_count, t.rooms.size, t.rooms.size), R.color.success)
+        findViewById<View>(R.id.room_settings).shown = true // Once there are rooms to set.
         models(t.rooms)
     }
 
@@ -560,13 +537,6 @@ class MainActivity : Activity() {
 
     private fun model(r: Room) = Prefs.model(this, r.id)
 
-    /** A room's second line, as the Sonos app's: its model, such as "Era 300", then its address. */
-    private fun roomMeta(r: Room, model: String): String {
-        val ip = r.own.substringBefore(':')
-        // One kept by an earlier build is the model name whole, as "Sonos Era 300".
-        return if (model.isEmpty()) ip else "${model.removePrefix("Sonos ")} · $ip"
-    }
-
     /**
      * Reads the model of each room's main player not known yet (~15 ms each), and redraws its icon. Known ones aren't
      * asked again: the id is the player's own, and a player doesn't change its model.
@@ -632,7 +602,22 @@ class MainActivity : Activity() {
         }
         servers.shown = true
         val n = servers.childCount
-        serversSummary.text = resources.getQuantityString(R.plurals.server_count, n, n)
+        serversLine(resources.getQuantityString(R.plurals.server_count, n, n), R.color.success)
+    }
+
+    /**
+     * The Rooms card's line, in [color]: success with rooms found, warning when the app has nothing to control, as
+     * without WiFi or a Sonos system; grey while it searches.
+     */
+    private fun roomsLine(text: String, color: Int = R.color.text2) {
+        roomsSummary.text = text
+        roomsSummary.setTextColor(getColor(color))
+    }
+
+    /** The servers card's line, in [color]: success with servers found; grey while it searches, or with none. */
+    private fun serversLine(text: String, color: Int = R.color.text2) {
+        serversSummary.text = text
+        serversSummary.setTextColor(getColor(color))
     }
 
     /** Everything has answered or timed out. */
@@ -641,8 +626,9 @@ class MainActivity : Activity() {
         if (rooms.childCount == 0) {
             room = null // No Sonos here: nothing for the player to control, so it hides.
             player.room = null
-            roomsSummary.setText(R.string.no_rooms)
+            roomsLine(getString(R.string.no_rooms), R.color.warning)
+            findViewById<View>(R.id.room_settings).shown = false
         }
-        if (servers.childCount == 0) serversSummary.setText(R.string.no_servers)
+        if (servers.childCount == 0) serversLine(getString(R.string.no_servers))
     }
 }

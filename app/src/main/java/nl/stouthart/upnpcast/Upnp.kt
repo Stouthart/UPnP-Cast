@@ -13,12 +13,18 @@ import java.net.URL
  * A Sonos room or group: playback and the queue go to its coordinator, at [host] ("ip:port"). [members]: the other
  * visible players grouped with it; a group's mute is the group's. [own]: the room's own player, where it joins or
  * leaves a group, and whose volume a room alone has. [players]: a group's players, coordinator included, which its
- * volume sets one by one.
+ * volume sets one by one. [sub]: the room has a bonded Sub, whose settings its own player keeps.
  */
 class Room(
     val id: String, val name: String, val host: String, val members: Int = 0, val own: String = host,
-    val players: List<String> = listOf(own),
+    val players: List<String> = listOf(own), val sub: Boolean = false,
 )
+
+/**
+ * Whether a player's channel map, as "RINCON_A:LF,RF;RINCON_B:SW", has a Sub: a player on the SW channel. A soundbar's
+ * comes as HTSatChanMapSet, a speaker's as ChannelMapSet. A player answers the Sub's settings without one, too.
+ */
+fun hasSub(map: String) = map.split(';').any { "SW" in it.substringAfter(':', "").split(',') }
 
 /** The same group as [o]: the same coordinator and players; two nulls are the same, nothing to control. */
 fun Room?.same(o: Room?) = if (this == null) o == null else o != null && id == o.id && members == o.members && players == o.players
@@ -228,7 +234,7 @@ object Upnp {
         }
     }
 
-    private class Member(val id: String, val name: String, val host: String)
+    private class Member(val id: String, val name: String, val host: String, val sub: Boolean)
 
     /** The household, from any one player at [host]. */
     fun topology(host: String): Topology {
@@ -248,7 +254,7 @@ object Upnp {
                     val others = members.size - 1
                     groups += Room(coordinator, if (others == 0) name else "$name + $others", at, others, at, members.map { it.host })
                     for (m in members) {
-                        rooms += Room(m.id, m.name, at, 0, m.host)
+                        rooms += Room(m.id, m.name, at, 0, m.host, sub = m.sub)
                         groupOf[m.id] = coordinator
                     }
                 }
@@ -267,7 +273,7 @@ object Upnp {
                 // players in it are asked every few seconds.
                 "ZoneGroupMember" -> if (p.attr("Invisible") != "1") {
                     val h = hostOf(p.attr("Location"))?.takeIf { player(it) } ?: continue
-                    val m = Member(p.attr("UUID"), p.attr("ZoneName"), h)
+                    val m = Member(p.attr("UUID"), p.attr("ZoneName"), h, hasSub(p.attr("HTSatChanMapSet") + ";" + p.attr("ChannelMapSet")))
                     members += m
                     if (m.id == coordinator) {
                         at = h

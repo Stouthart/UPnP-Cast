@@ -13,4 +13,15 @@ class FormatTest {
         assertEquals("MP3", Res("", "x-file-cifs:*:audio/mpeg:*", 0, 0, "").format()) // The Music library's.
         assertEquals("DSF 2.8 MHz 1-bit", Res("", "http-get:*:audio/x-dsf:*", 2822400, 1, "").format())
     }
+
+    /** What Now Playing shows in green: a lossless codec, or a stream that says it's lossless. */
+    @Test
+    fun lossless() {
+        assertEquals(true, Res("", "http-get:*:audio/x-flac:*", 44100, 16, "").lossless())
+        assertEquals(true, Res("", "http-get:*:audio/wav:*", 48000, 24, "").lossless())
+        assertEquals(false, Res("", "x-file-cifs:*:audio/mpeg:*", 0, 0, "").lossless())
+        assertEquals(false, Res("", "http-get:*:audio/mp4:*", 44100, 16, "").lossless()) // ALAC or AAC: can't tell.
+        assertEquals(true, Res("", "", 44100, 16, "").lossless("Lossless")) // Spotify's stream says so.
+        assertEquals(false, Res("", "", 44100, 16, "").lossless("Lossy"))
+    }
 }
