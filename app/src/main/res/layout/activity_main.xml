@@ -18,12 +18,14 @@
         android:orientation="vertical"
         android:padding="16dp">
 
-        <!-- Rooms: the checked ones play together -->
+        <!-- Rooms: the checked ones play together. Its title row reaches into the card's padding, so Room settings ends
+             where the mini player's Play circle does, its whole 40dp to tap. -->
         <LinearLayout style="@style/Card">
 
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:layout_marginEnd="-20dp"
                 android:gravity="center_vertical"
                 android:orientation="horizontal">
 
@@ -48,11 +50,14 @@
                         style="@style/Summary" />
                 </LinearLayout>
 
-                <!-- Room settings, as Browse's card has its actions: once there are rooms to set. -->
+                <!-- Room settings, as Browse's card has its actions: once there are rooms to set. Every glyph at a card's
+                     right ends where the mini player's Play circle does, at the card's content edge: this one, 11dp
+                     inside its 40dp, 9dp in from the row's end. -->
                 <ImageView
                     android:id="@+id/room_settings"
                     android:layout_width="40dp"
                     android:layout_height="40dp"
+                    android:layout_marginEnd="9dp"
                     android:background="?android:attr/selectableItemBackgroundBorderless"
                     android:contentDescription="@string/room_settings"
                     android:padding="8dp"
@@ -75,6 +80,42 @@
                 android:layout_marginTop="20dp"
                 android:text="@string/allow_lan"
                 android:visibility="gone" />
+        </LinearLayout>
+
+        <!-- Favorites: a title alone, as App settings closed; a tap opens all of them in Browse. Hidden while there's
+             none to play. -->
+        <LinearLayout
+            android:id="@+id/favorites_card"
+            style="@style/Card"
+            android:layout_marginTop="16dp"
+            android:visibility="gone">
+
+            <!-- As App settings' header: 48dp to tap, the -10dp margins keep the title where a card's title sits. -->
+            <LinearLayout
+                android:id="@+id/favorites_header"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="-10dp"
+                android:layout_marginBottom="-10dp"
+                android:background="?android:attr/selectableItemBackground"
+                android:gravity="center_vertical"
+                android:minHeight="48dp"
+                android:orientation="horizontal">
+
+                <TextView
+                    style="@style/Title"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:text="@string/favorites" />
+
+                <!-- As a server's row: they open in Browse. Ends where the Play circle does: › stops 8dp inside its box. -->
+                <ImageView
+                    android:layout_width="24dp"
+                    android:layout_height="24dp"
+                    android:layout_marginEnd="-8dp"
+                    android:importantForAccessibility="no"
+                    android:src="@drawable/ic_chevron" />
+            </LinearLayout>
         </LinearLayout>
 
         <!-- UPnP/DLNA servers -->
@@ -117,14 +158,12 @@
                 android:visibility="gone" />
         </LinearLayout>
 
-        <!-- Settings: the title row opens and closes the card; closed at first, then as it was left. Its slider rows
-             reach 4dp past the body's edge, to line up with the mini player: the card clips the body neither at its edges
-             nor at its own padding. -->
+        <!-- Settings: the title row opens and closes the card; closed at first, then as it was left. The card leaves
+             its padding unclipped: the title row reaches 10dp into it, above and below, and its ripple shows whole. -->
         <LinearLayout
             style="@style/Card"
             android:layout_marginTop="16dp"
             android:animateLayoutChanges="true"
-            android:clipChildren="false"
             android:clipToPadding="false">
 
             <!-- No bar: it marks a title with a summary line, as on Rooms; Settings is a title alone. -->
@@ -147,11 +186,13 @@
                     android:layout_weight="1"
                     android:text="@string/app_settings" />
 
-                <!-- Down while closed, turned up while open. -->
+                <!-- Down while closed, turned up while open; ends at the card's content edge, where the Play circle
+                     ends: ⌄ stops 6dp inside its box. -->
                 <ImageView
                     android:id="@+id/settings_chevron"
                     android:layout_width="24dp"
                     android:layout_height="24dp"
+                    android:layout_marginEnd="-6dp"
                     android:importantForAccessibility="no"
                     android:src="@drawable/ic_expand" />
             </LinearLayout>
@@ -173,16 +214,15 @@
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginStart="-4dp"
-                    android:layout_marginEnd="-4dp"
-                    android:layout_marginTop="10dp"
+                    android:layout_marginTop="-1dp"
+                    android:layout_marginBottom="-11dp"
                     android:gravity="center_vertical"
                     android:orientation="horizontal">
 
                     <ImageView
                         android:layout_width="40dp"
                         android:layout_height="40dp"
-                        android:layout_marginStart="-8dp"
+                        android:layout_marginStart="-11dp"
                         android:importantForAccessibility="no"
                         android:padding="8dp"
                         android:src="@drawable/ic_volume" />
@@ -218,20 +258,19 @@
                     android:layout_marginTop="20dp"
                     android:text="@string/quick_skip" />
 
-                <!-- As Polling interval below. -->
+                <!-- As Polling interval below; -12dp: this arrow is drawn 4dp into its box. -->
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginStart="-4dp"
-                    android:layout_marginEnd="-4dp"
-                    android:layout_marginTop="10dp"
+                    android:layout_marginTop="-1dp"
+                    android:layout_marginBottom="-11dp"
                     android:gravity="center_vertical"
                     android:orientation="horizontal">
 
                     <ImageView
                         android:layout_width="40dp"
                         android:layout_height="40dp"
-                        android:layout_marginStart="-8dp"
+                        android:layout_marginStart="-12dp"
                         android:importantForAccessibility="no"
                         android:padding="8dp"
                         android:src="@drawable/ic_skip_forward"
@@ -264,20 +303,21 @@
                     android:text="@string/polling" />
 
                 <!-- The mini player's volume row exactly: a 40dp icon slot, the slider, the value centred in 48dp.
-                     -4dp: this card has 20dp padding, the mini player 16dp, so slider and value line up with it. -->
+                     -11dp at the start: the glyph, drawn 3dp into its box, starts on the label's line. The box
+                     reaches 11dp above and below the glyph and the slider, so -1dp at the top and -11dp at the foot
+                     count the margins from what shows: 10dp from the label, as segments are, and 20dp to what follows. -->
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginStart="-4dp"
-                    android:layout_marginEnd="-4dp"
-                    android:layout_marginTop="10dp"
+                    android:layout_marginTop="-1dp"
+                    android:layout_marginBottom="-11dp"
                     android:gravity="center_vertical"
                     android:orientation="horizontal">
 
                     <ImageView
                         android:layout_width="40dp"
                         android:layout_height="40dp"
-                        android:layout_marginStart="-8dp"
+                        android:layout_marginStart="-11dp"
                         android:importantForAccessibility="no"
                         android:padding="8dp"
                         android:src="@drawable/ic_timer" />

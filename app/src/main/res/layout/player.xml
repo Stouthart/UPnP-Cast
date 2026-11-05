@@ -1,12 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- The room's track, Play/Pause and volume, at the foot of every screen. Hidden until there is a room. -->
+<!-- The room's track, Play/Pause and volume, at the foot of every screen. Hidden until there is a room. The Card's
+     20dp padding all round: from the cover at the top and the volume row at the foot, as from the sides. -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/player"
     style="@style/Card"
     android:layout_marginHorizontal="16dp"
     android:layout_marginBottom="16dp"
-    android:paddingHorizontal="16dp"
-    android:paddingVertical="14dp"
     android:visibility="gone">
 
     <LinearLayout
@@ -63,10 +62,13 @@
             android:src="@drawable/ic_play" />
     </LinearLayout>
 
+    <!-- -11dp at the start: the speaker, drawn 3dp into its box, starts on the cover's line. -11dp at the foot: the
+         box reaches 11dp below the speaker and the slider, so the card's padding counts from what shows. -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="10dp"
+        android:layout_marginBottom="-11dp"
         android:gravity="center_vertical"
         android:orientation="horizontal">
 
@@ -74,7 +76,7 @@
             android:id="@+id/player_mute"
             android:layout_width="40dp"
             android:layout_height="40dp"
-            android:layout_marginStart="-8dp"
+            android:layout_marginStart="-11dp"
             android:background="?android:attr/selectableItemBackgroundBorderless"
             android:contentDescription="@string/mute"
             android:padding="8dp"

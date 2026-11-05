@@ -7,6 +7,7 @@ import org.xmlpull.v1.XmlPullParser.END_DOCUMENT
 import org.xmlpull.v1.XmlPullParser.START_TAG
 import java.io.IOException
 import java.io.StringReader
+import java.net.URLEncoder
 import java.util.Locale
 import java.util.concurrent.ExecutionException
 import java.util.concurrent.Executors
@@ -23,6 +24,24 @@ class Track(
     val title: String, val artist: String, val album: String, val art: String, val format: String, val uri: String,
     val lossless: Boolean, // See Res.lossless: Now Playing shows the format in green.
 )
+
+/**
+ * [title] is no more than its stream link's file name, as regc-90s90strance-mp3-192-…?sABC=… for
+ * …/regc-90s90strance-mp3-192-2383645?sABC=…: not a name to show.
+ */
+fun linkTitle(title: String, uri: String): Boolean {
+    val file = uri.substringBefore('?').substringAfterLast('/')
+    return file.isNotEmpty() && title.substringBefore('?') == file
+}
+
+/**
+ * A stream's text that's the speaker's own state, not a song: ZPSTR_CONNECTING, then ZPSTR_BUFFERING, for a few
+ * seconds after Play. The Sonos app shows neither.
+ */
+fun speakerState(text: String) = text.startsWith("ZPSTR_")
+
+/** A radio station as GetMediaInfo has it: its name, its logo, and the URI the speaker keeps that logo for. */
+class Station(val name: String, val art: String, val uri: String)
 
 /**
  * The room's track as raw TrackMetaData (parse it with [Sonos.track] only when it changed), its queue position,
@@ -209,10 +228,25 @@ object Sonos {
 
     private fun queueUri(r: Room) = "x-rincon-queue:${r.id}#0"
 
+    /** The player at [host]'s own copy of the cover for [uri], fetched by the player: the phone stays on the LAN. */
+    fun copy(host: String, uri: String) = "http://$host/getaa?s=1&u=${URLEncoder.encode(uri, Charsets.UTF_8)}"
+
     /** Whether the room plays its queue, rather than e.g. Spotify or the TV. */
     fun queued(r: Room) = Upnp.arg(avt(r, "GetMediaInfo"), "CurrentURI") == queueUri(r)
 
-    /** PLAYING, PAUSED_PLAYBACK, STOPPED or TRANSITIONING. */
+    /** The household's music services by number, as [r]'s player lists them, as 31 Qobuz: ~48 KB, ~75 ms. */
+    fun services(r: Room): Map<String, String> = serviceNames(
+        Upnp.arg(Http.soap("http://${r.host}/MusicServices/Control", "MusicServices", "ListAvailableServices"),
+            "AvailableServiceDescriptorList").orEmpty(),
+    )
+
+    /** The radio station [r] plays: a stream's own track info may have neither its name nor its logo. */
+    fun station(r: Room): Station {
+        val (uri, meta) = Upnp.args(avt(r, "GetMediaInfo"), "CurrentURI", "CurrentURIMetaData")
+        val t = track(meta)
+        return Station(t?.title.orEmpty(), t?.art.orEmpty(), uri.orEmpty())
+    }
+
     /**
      * The group of [r]'s coordinator as it reports it, in ~600 bytes: its id and players change with every regrouping,
      * made here or elsewhere.
@@ -225,6 +259,7 @@ object Sonos {
         return "$id $players"
     }
 
+    /** PLAYING, PAUSED_PLAYBACK, STOPPED or TRANSITIONING. */
     fun state(r: Room) = Upnp.arg(avt(r, "GetTransportInfo"), "CurrentTransportState") ?: ""
 
     /** Pauses what plays, else plays; the state is read right before, never trusted from an earlier poll. */
@@ -357,7 +392,9 @@ object Sonos {
                 "creator" -> artist = p.nextText()
                 "album" -> album = p.nextText()
                 "albumArtURI" -> art = p.nextText().trim()
-                "streamContent" -> stream = p.nextText() // A radio station's "Artist - Title".
+                // A radio station's "Artist - Title"; the speaker's state while it connects counts as none, so the
+                // station's name shows, as while paused.
+                "streamContent" -> stream = p.nextText().takeUnless(::speakerState).orEmpty()
                 "res" -> {
                     info = p.getAttributeValue(null, "protocolInfo") ?: ""
                     hz = p.getAttributeValue(null, "sampleFrequency")?.toIntOrNull() ?: hz
@@ -376,8 +413,12 @@ object Sonos {
         val res = Res("", info, hz, bits, "")
         val format = res.format(quality)
         val lossless = res.lossless(quality)
-        if (stream.isNotEmpty()) return Track(stream, title, album, art, format, uri, lossless)
-        return if (title.isEmpty()) null else Track(title, artist, album, art, format, uri, lossless)
+        // A stream's own title is often its station's, else its link's file name: that one not, the station's name
+        // from GetMediaInfo goes there instead. Also while paused, when the station sends no song: then no track,
+        // and the station's name is the title.
+        val own = if (linkTitle(title, uri)) "" else title
+        if (stream.isNotEmpty()) return Track(stream, own, album, art, format, uri, lossless)
+        return if (own.isEmpty()) null else Track(own, artist, album, art, format, uri, lossless)
     }
 
     /**
@@ -396,6 +437,28 @@ object Sonos {
             How.END -> add(r, tracks, 0, false)
         }
         if (how == How.NOW || how == How.REPLACE) start(r, first + start, queued)
+    }
+
+    /**
+     * Plays favourite [f] on [r]: a playlist or album replaces the queue and plays from its first track; anything
+     * else, as a station, plays at once.
+     */
+    fun favorite(r: Room, f: Favorite) {
+        val uri = Upnp.esc(f.uri)
+        val md = Upnp.esc(f.meta)
+        if (listOf("x-rincon-cpcontainer:", "x-rincon-playlist:", "file:").none { f.uri.startsWith(it) }) {
+            avt(r, "SetAVTransportURI", "<CurrentURI>$uri</CurrentURI><CurrentURIMetaData>$md</CurrentURIMetaData>")
+            avt(r, "Play", "<Speed>1</Speed>")
+            return
+        }
+        val queued = queued(r)
+        avt(r, "RemoveAllTracksFromQueue")
+        avt(
+            r, "AddURIToQueue",
+            "<EnqueuedURI>$uri</EnqueuedURI><EnqueuedURIMetaData>$md</EnqueuedURIMetaData>" +
+                "<DesiredFirstTrackNumberEnqueued>0</DesiredFirstTrackNumberEnqueued><EnqueueAsNext>0</EnqueueAsNext>",
+        )
+        start(r, 1, queued)
     }
 
     /** Plays queue position [n] (1-based), switching the room to its queue first when it plays something else. */

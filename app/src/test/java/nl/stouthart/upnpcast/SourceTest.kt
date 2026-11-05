@@ -26,6 +26,41 @@ class SourceTest {
         assertEquals(Source.RADIO, source("x-sonosapi-stream:s24939?sid=254&flags=8224&sn=0"))
         assertEquals(Source.RADIO, source("x-rincon-mp3radio://icecast.example/stream"))
         assertEquals(Source.OTHER, source("x-sonos-http:librarytrack%3ai.abc.mp4?sid=204"))
+        // Sonos Radio: a track its station plays, and the station.
+        assertEquals(Source.SONOS_RADIO, source("x-sonos-http:sonos%3a820cb4f7e009-DZR%3a28%3amiddle%3a154250.mp4?sid=303&flags=0&sn=1"))
+        assertEquals(Source.SONOS_RADIO, source("x-sonosapi-radio:sonos%3a154250?sid=303&flags=0&sn=1"))
+        assertEquals(Source.OTHER, source("x-sonos-http:track.mp4?sid=3030&flags=0"))
+    }
+
+    /** A stream's own title that's only its link's file name isn't shown; a station's name is, even one in the link. */
+    @Test
+    fun linkTitles() {
+        val link = "x-rincon-mp3radio://https://regiocast.streamabc.net/regc-90s90strance-mp3-192-2383645?sABC=6nro95ps%230"
+        assertEquals(true, linkTitle("regc-90s90strance-mp3-192-2383645?sABC=6nro95ps#0#4qp100", link))
+        assertEquals(false, linkTitle("radio", link)) // Part of mp3radio, but not the file name.
+        assertEquals(false, linkTitle("90s90s Trance", link))
+        assertEquals(false, linkTitle("", "x-rincon-mp3radio://icecast.example/"))
+    }
+
+    /** A music service by its number in a link, and its name from the speakers' list, as a Beam Ultra lists them. */
+    @Test
+    fun serviceNumbersAndNames() {
+        assertEquals("31", serviceId("x-sonos-http:track%3a6112208%3a5.mp3?sid=31&flags=8232&sn=6")) // Qobuz.
+        assertEquals("9", serviceId("x-sonos-spotify:spotify:track:abc?sid=9&flags=0&sn=2"))
+        assertEquals(null, serviceId("x-rincon-mp3radio://stream.example.com/live?sid=31")) // Not a service's link.
+        assertEquals(null, serviceId("x-sonos-http:t.mp4?sid=31x"))
+        val list = "<Services SchemaVersion=\"1\"><Service Id=\"31\" Name=\"Qobuz\" Version=\"1.1\" Uri=\"https://q\">" +
+            "<Policy Auth=\"AppLink\"/></Service><Service Name=\"CBC Radio &amp; Music\" Id=\"256\"/></Services>"
+        assertEquals(mapOf("31" to "Qobuz", "256" to "CBC Radio & Music"), serviceNames(list))
+    }
+
+    /** The speaker's own state in a stream's text, as after Play on 80s80s Dance: no song to show. */
+    @Test
+    fun speakerStates() {
+        assertEquals(true, speakerState("ZPSTR_CONNECTING"))
+        assertEquals(true, speakerState("ZPSTR_BUFFERING"))
+        assertEquals(false, speakerState("Erasure - Who Needs Love Like That"))
+        assertEquals(false, speakerState("80s80s Dance"))
     }
 
     @Test

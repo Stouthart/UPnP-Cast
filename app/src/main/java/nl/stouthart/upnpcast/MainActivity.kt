@@ -62,6 +62,8 @@ class MainActivity : Activity() {
     private var checked: Set<String> = emptySet() // The rooms that play together, by id.
     private var room: Room? = null // Their group, as the player controls it: one room, or Kitchen + 1.
     private var library: View? = null // The Music library row, kept after the servers whatever order they answer in.
+    private lateinit var favoritesCard: View
+    private var favorites: Server? = null // Where the favourites came from: Browse opens them there.
 
     @SuppressLint("InlinedApi") // ACCESS_LOCAL_NETWORK is Android 17's; before, lanAllowed() is true and it's never used.
     override fun onCreate(b: Bundle?) {
@@ -72,6 +74,8 @@ class MainActivity : Activity() {
         allow = findViewById(R.id.allow)
         serversSummary = findViewById(R.id.servers_summary)
         servers = findViewById(R.id.servers)
+        favoritesCard = findViewById(R.id.favorites_card)
+        findViewById<View>(R.id.favorites_header).setOnClickListener { favorites?.let(::browse) }
         // The rooms' own settings, in a sheet; shown once a search has found rooms.
         findViewById<View>(R.id.room_settings).setOnClickListener {
             if (found.isNotEmpty()) startActivity(RoomActivity.intent(this, found))
@@ -264,11 +268,13 @@ class MainActivity : Activity() {
         if (allow.shown) {
             roomsLine(getString(R.string.lan_needed))
             serversLine("")
+            favoritesCard.shown = false
             return
         }
         if (Lan.wifi == null) { // The player hides by itself without WiFi.
             roomsLine(getString(R.string.connect_wifi), R.color.warning)
             serversLine("")
+            favoritesCard.shown = false
             return
         }
         roomsLine(getString(R.string.searching))
@@ -305,13 +311,23 @@ class MainActivity : Activity() {
                 prefs.edit().putString(KEY_SONOS, location).apply()
                 val ms = SystemClock.elapsedRealtime() - t0
                 runOnUiThread { if (g == gen) showRooms(t, ms) }
-                // The household's music library, the same from any player: listed once it has a share.
-                val lib = try {
-                    Upnp.server(location)?.let { Server(it.udn, getString(R.string.music_library), it.host, it.control, it.icon, true) }
+                // The household's favourites and music library, the same from any player; the library is listed once
+                // it has a share.
+                val dev = try {
+                    Upnp.server(location)
                 } catch (e: Exception) {
                     Log.i(TAG, "No library at $location: $e")
                     null
                 } ?: return@task
+                // Alongside the library's shares; read again on every search, for one saved elsewhere meanwhile. The
+                // panel stays as it was until then: no jump of the cards below it.
+                val fav = Server(dev.udn, getString(R.string.favorites), dev.host, dev.control, null, favorites = true)
+                task {
+                    runCatching { Upnp.browse(fav, "FV:2", 0, 100).entries }.onSuccess {
+                        runOnUiThread { if (g == gen) showFavorites(fav, it) }
+                    }
+                }
+                val lib = Server(dev.udn, getString(R.string.music_library), dev.host, dev.control, dev.icon, true)
                 val shares = runCatching { Upnp.browse(lib, "S:", 0, 20).entries }.getOrNull()
                 if (shares.isNullOrEmpty()) return@task
                 val at = SystemClock.elapsedRealtime() - t0
@@ -577,22 +593,7 @@ class MainActivity : Activity() {
         if (!s.library) Player.servers[s.host] = s.name // Now Playing's source for its tracks.
         val v = row(servers, s.name, meta, bmp, glyph).apply {
             findViewById<View>(R.id.chevron).shown = true
-            setOnClickListener {
-                val i = Intent(this@MainActivity, BrowseActivity::class.java)
-                    .putExtra(BrowseActivity.CONTROL, s.control)
-                    .putExtra(BrowseActivity.HOST, s.host)
-                    .putExtra(BrowseActivity.NAME, s.name)
-                    .putExtra(BrowseActivity.LIBRARY, s.library)
-                room?.let {
-                    i.putExtra(BrowseActivity.ROOM_ID, it.id)
-                        .putExtra(BrowseActivity.ROOM_NAME, it.name)
-                        .putExtra(BrowseActivity.ROOM_HOST, it.host)
-                        .putExtra(BrowseActivity.ROOM_MEMBERS, it.members)
-                        .putExtra(BrowseActivity.ROOM_OWN, it.own)
-                        .putExtra(BrowseActivity.ROOM_PLAYERS, it.players.toTypedArray())
-                }
-                startActivity(i)
-            }
+            setOnClickListener { browse(s) }
         }
         if (s.library) {
             library = v
@@ -603,6 +604,31 @@ class MainActivity : Activity() {
         servers.shown = true
         val n = servers.childCount
         serversLine(resources.getQuantityString(R.plurals.server_count, n, n), R.color.success)
+    }
+
+    /** Browse on [s], playing in the player's room. */
+    private fun browse(s: Server) {
+        val i = Intent(this, BrowseActivity::class.java)
+            .putExtra(BrowseActivity.CONTROL, s.control)
+            .putExtra(BrowseActivity.HOST, s.host)
+            .putExtra(BrowseActivity.NAME, s.name)
+            .putExtra(BrowseActivity.LIBRARY, s.library)
+            .putExtra(BrowseActivity.FAVORITES, s.favorites)
+        room?.let {
+            i.putExtra(BrowseActivity.ROOM_ID, it.id)
+                .putExtra(BrowseActivity.ROOM_NAME, it.name)
+                .putExtra(BrowseActivity.ROOM_HOST, it.host)
+                .putExtra(BrowseActivity.ROOM_MEMBERS, it.members)
+                .putExtra(BrowseActivity.ROOM_OWN, it.own)
+                .putExtra(BrowseActivity.ROOM_PLAYERS, it.players.toTypedArray())
+        }
+        startActivity(i)
+    }
+
+    /** The Favorites card, opening the favourites of [s]: shown while one of them plays here. */
+    private fun showFavorites(s: Server, all: List<Entry>) {
+        favorites = s
+        favoritesCard.shown = all.any { it.playable } // Shortcuts alone can't be played here.
     }
 
     /**
@@ -627,6 +653,7 @@ class MainActivity : Activity() {
             room = null // No Sonos here: nothing for the player to control, so it hides.
             player.room = null
             roomsLine(getString(R.string.no_rooms), R.color.warning)
+            favoritesCard.shown = false // Nothing to play them on.
             findViewById<View>(R.id.room_settings).shown = false
         }
         if (servers.childCount == 0) serversLine(getString(R.string.no_servers))

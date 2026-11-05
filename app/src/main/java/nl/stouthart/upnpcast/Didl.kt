@@ -9,6 +9,19 @@ import java.io.StringReader
 import java.net.URL
 import java.util.Locale
 
+/**
+ * A cover's size class by its DLNA profile (dlna:profileID), as a server labels each size it offers: JPEG_TN, the
+ * thumbnail, up to JPEG_LRG; PNG's the same. Of an item's covers the largest is kept, the first of equals; 0 without a
+ * label, so a server that sends one cover, or several unlabelled, gives the first as before.
+ */
+fun coverSize(profile: String?) = when (profile?.substringAfterLast('_')) {
+    "TN" -> 1
+    "SM" -> 2
+    "MED" -> 3
+    "LRG" -> 4
+    else -> 0
+}
+
 /** Sonos plays nothing above 48 kHz over UPnP. */
 const val MAX_HZ = 48000
 
@@ -17,12 +30,21 @@ private val LOSSLESS = setOf("FLAC", "ALAC", "WAV", "LPCM", "AIFF")
 /** A track's audio as the server offers it; 0 where the server doesn't say. */
 class Res(val url: String, val protocolInfo: String, val hz: Int, val bits: Int, val duration: String) {
     private fun codec(): String {
-        val mime = protocolInfo.split(':').getOrNull(2)?.substringAfter('/')?.removePrefix("x-")?.lowercase() ?: ""
+        val p = protocolInfo.split(':')
+        val mime = p.getOrNull(2)?.substringAfter('/')?.removePrefix("x-")?.lowercase() ?: ""
         return when (mime) {
+            // Spotify played from the Sonos app, x-sonos-spotify:…: audio/x-spotify names the service, not a format.
+            "spotify" -> ""
             "mpeg", "mp3" -> "MP3"
             "mp4", "m4a" -> "M4A"
             "wav", "wave" -> "WAV"
             "l16", "l24" -> "LPCM"
+            // A radio stream's says only *, as x-rincon-mp3radio:*:*:*: its scheme tells, or nothing does.
+            "*" -> when {
+                "mp3" in p[0] -> "MP3"
+                "aac" in p[0] -> "AAC"
+                else -> ""
+            }
             else -> mime.uppercase()
         }
     }
@@ -53,7 +75,13 @@ class Res(val url: String, val protocolInfo: String, val hz: Int, val bits: Int,
     }
 }
 
-/** A container or track from a Browse; [res] is the first resource Sonos can play, else the first. */
+/**
+ * A Sonos favourite, as the speakers keep it for the household: what plays it, [uri] and its description [meta]. A
+ * shortcut, to a page in a music service, has no [uri]: it can't be played over UPnP.
+ */
+class Favorite(val uri: String, val meta: String)
+
+/** A container or track from a Browse; [res] is the first resource Sonos can play, else the first. [fav]: a favourite. */
 class Entry(
     val id: String,
     val title: String,
@@ -64,8 +92,9 @@ class Entry(
     val art: String?,
     val count: Int, // A container's children, or -1.
     val res: Res?,
+    val fav: Favorite? = null,
 ) {
-    val playable get() = res != null && res.url.isNotEmpty() && res.hz <= MAX_HZ
+    val playable get() = if (fav != null) fav.uri.isNotEmpty() else res != null && res.url.isNotEmpty() && res.hz <= MAX_HZ
     var meta = "" // The row's detail line, made with the page, off the main thread.
 }
 
@@ -89,11 +118,12 @@ object Didl {
      */
     fun library(control: String): (String) -> String? {
         val base = URL(control)
-        return { u ->
-            if (u.startsWith("x-file-cifs://")) u
-            else runCatching { URL(base, u) }.getOrNull()?.takeIf { it.protocol == "http" && it.host == base.host }?.toString()
-        }
+        return { u -> if (u.startsWith("x-file-cifs://")) u else player(base, u) }
     }
+
+    /** [u], resolved against the player at [base], when it's an http link on that player. */
+    private fun player(base: URL, u: String) =
+        runCatching { URL(base, u) }.getOrNull()?.takeIf { it.protocol == "http" && it.host == base.host }?.toString()
 
     /**
      * The entries of a DIDL-Lite document. [url] vets every cover and track URL; a refused track URL keeps the
@@ -112,6 +142,7 @@ object Didl {
         var creator = ""
         var album = ""
         var art: String? = null
+        var size = -1 // The size class of the cover kept so far.
         var res: Res? = null
         var first: Res? = null
         while (p.next() != END_DOCUMENT) {
@@ -132,6 +163,7 @@ object Didl {
                     creator = ""
                     album = ""
                     art = null
+                    size = -1
                     res = null
                     first = null
                 }
@@ -142,7 +174,14 @@ object Didl {
                 "artist" -> if (artist.isEmpty() && p.getAttributeValue(null, "role") == null) artist = p.nextText()
                 "creator" -> creator = p.nextText()
                 "album" -> album = p.nextText()
-                "albumArtURI" -> if (art == null) art = url(p.nextText().trim())
+                "albumArtURI" -> {
+                    val k = coverSize(p.getAttributeValue(null, "profileID"))
+                    val u = url(p.nextText().trim())
+                    if (u != null && k > size) {
+                        art = u
+                        size = k
+                    }
+                }
                 "res" -> if (res == null) {
                     val hz = p.getAttributeValue(null, "sampleFrequency")?.toIntOrNull() ?: 0
                     val bits = p.getAttributeValue(null, "bitsPerSample")?.toIntOrNull() ?: 0
@@ -152,6 +191,52 @@ object Didl {
                     if (first == null) first = r
                     if (r.url.isNotEmpty() && hz <= MAX_HZ) res = r // One whose link was refused leaves room for the next.
                 }
+            }
+        }
+        return out
+    }
+
+    /**
+     * The Sonos favourites (FV:2) from the player at [control]: each by its title and its service ("90s90s Radio") as
+     * the artist. The cover is the player's own: the favourite's, else its copy for the favourite's link.
+     */
+    fun favorites(xml: String, control: String): List<Entry> {
+        if (xml.isBlank()) return emptyList()
+        val base = URL(control)
+        val p = Xml.newPullParser().apply { setInput(StringReader(noDtd(xml))) }
+        val out = ArrayList<Entry>()
+        var id = ""
+        var title = ""
+        var type = ""
+        var service = ""
+        var uri = ""
+        var meta = ""
+        var art: String? = null
+        while (p.next() != END_DOCUMENT) {
+            val name = p.name
+            if (p.eventType == END_TAG && name == "item") {
+                val u = if (type == "shortcut") "" else uri
+                val cover = art ?: if (u.isEmpty()) null else Sonos.copy(base.authority, u)
+                out += Entry(id, title, false, "object.item.sonos-favorite", service, "", cover, -1, null, Favorite(u, meta))
+                continue
+            }
+            if (p.eventType != START_TAG) continue
+            when (name) {
+                "item" -> {
+                    id = p.getAttributeValue(null, "id") ?: ""
+                    title = ""
+                    type = ""
+                    service = ""
+                    uri = ""
+                    meta = ""
+                    art = null
+                }
+                "title" -> title = p.nextText()
+                "type" -> type = p.nextText()
+                "description" -> service = p.nextText()
+                "res" -> uri = p.nextText().trim()
+                "resMD" -> meta = p.nextText() // DIDL-Lite of its own, as text: the speaker takes it back as it is.
+                "albumArtURI" -> if (art == null) art = player(base, p.nextText().trim()) // A cover, never a track's link.
             }
         }
         return out

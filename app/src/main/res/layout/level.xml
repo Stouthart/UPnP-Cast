@@ -1,8 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- A room's level: its name, then the mini player's volume row exactly, as the main screen's settings have it: a 40dp
-     icon slot, the slider, the value centred in 48dp. -4dp: these cards have 20dp padding, the mini player 16dp, so
-     slider and value line up with it. That row reaches 4dp past this level's edge, so the card around it doesn't clip
-     its children, neither at their own edges (clipChildren) nor at its padding (clipToPadding). -->
+     icon slot, the slider, the value centred in 48dp. -11dp at the start: a glyph drawn 3dp into its box starts on the
+     name's line; RoomActivity sets the Sub's, drawn 4dp in. The box reaches 11dp above and below the glyph and the
+     slider, so -1dp at the top and -11dp at the foot count the margins from what shows: 10dp from the name, as segments
+     are, and 20dp to what follows, or to the card's edge. -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
@@ -16,9 +17,8 @@
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginStart="-4dp"
-        android:layout_marginEnd="-4dp"
-        android:layout_marginTop="10dp"
+        android:layout_marginTop="-1dp"
+        android:layout_marginBottom="-11dp"
         android:gravity="center_vertical"
         android:orientation="horizontal">
 
@@ -26,7 +26,7 @@
             android:id="@+id/level_icon"
             android:layout_width="40dp"
             android:layout_height="40dp"
-            android:layout_marginStart="-8dp"
+            android:layout_marginStart="-11dp"
             android:importantForAccessibility="no"
             android:padding="8dp" />
 

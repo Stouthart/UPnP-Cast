@@ -40,6 +40,7 @@ class BrowseActivity : Activity() {
         const val HOST = "host"
         const val NAME = "name"
         const val LIBRARY = "library"
+        const val FAVORITES = "favorites"
         const val ROOM_ID = "room_id"
         const val ROOM_NAME = "room_name"
         const val ROOM_HOST = "room_host"
@@ -59,6 +60,9 @@ class BrowseActivity : Activity() {
         var pos = 0 // The scroll position, restored on the way back up.
         var top = 0
     }
+
+    private val outset by lazy { (2 * resources.displayMetrics.density).toInt() }
+    private val inset by lazy { (5 * resources.displayMetrics.density).toInt() }
 
     private class Holder(v: View) {
         val art: ImageView = v.findViewById(R.id.art)
@@ -107,9 +111,10 @@ class BrowseActivity : Activity() {
             h.name.text = e.title
             // A row greyed out above 48 kHz has its format in the warning colour, at full strength: why it can't play.
             val high = !tiles && !e.container && (e.res?.hz ?: 0) > MAX_HZ
-            // A tile is too narrow for a track's artist and format as well: its length alone; a row has the room.
+            // A tile is too narrow for a track's artist and format as well: its length alone; a row has the room. A
+            // favourite shows its service.
             h.meta.text = when {
-                tiles && !e.container -> e.res?.time().orEmpty()
+                tiles && !e.container && e.fav == null -> e.res?.time().orEmpty()
                 high -> SpannableString(e.meta).apply {
                     val f = e.res!!.format()
                     val at = e.meta.lastIndexOf(f)
@@ -121,8 +126,12 @@ class BrowseActivity : Activity() {
             if (!tiles) h.meta.visibility = if (e.meta.isEmpty()) View.GONE else View.VISIBLE
             h.chevron?.visibility = if (e.container) View.VISIBLE else View.GONE
             // ⋯ only where the menu has tracks to queue: a track, or an album (a category like Artist holds none).
-            val queueable = if (e.container) e.cls.startsWith("object.container.album") else e.playable
+            val queueable = e.fav == null && if (e.container) e.cls.startsWith("object.container.album") else e.playable
             h.more.visibility = if (queueable) View.VISIBLE else View.GONE
+            // A list row's last glyph ends where a folder's › does, and the Play circle: a track's dots stop 10dp
+            // inside their 24dp, so 2dp further out, into the row's padding. An album's dots, before its ›, end where
+            // the header's Home does, 5dp further in: two columns, Home over ⋯ and Grid/List over ›.
+            if (!tiles) (h.more.layoutParams as ViewGroup.MarginLayoutParams).marginEnd = if (e.container) inset else -outset
             h.more.setOnClickListener { menu(it, e) }
             (if (tiles) tileArt!! else art).show(h.art, e.art, if (e.container) R.drawable.ic_folder else R.drawable.ic_music)
             val dim = if (e.container || e.playable) 1f else 0.5f
@@ -179,6 +188,7 @@ class BrowseActivity : Activity() {
             "", i.getStringExtra(NAME) ?: "",
             i.getStringExtra(HOST) ?: return finish(),
             i.getStringExtra(CONTROL) ?: return finish(), null, i.getBooleanExtra(LIBRARY, false),
+            i.getBooleanExtra(FAVORITES, false),
         )
         setContentView(R.layout.activity_browse)
         title = findViewById(R.id.title)
@@ -207,7 +217,13 @@ class BrowseActivity : Activity() {
             room = Player.room(i) // Where tracks play, following the speakers' grouping; null when no Sonos was found.
             onNetwork = { retry() }
         }
-        open(if (server.library) sections() else Level("0", server.name))
+        open(
+            when {
+                server.favorites -> Level("FV:2", server.name)
+                server.library -> sections()
+                else -> Level("0", server.name)
+            },
+        )
     }
 
     /**
@@ -290,8 +306,9 @@ class BrowseActivity : Activity() {
     /** The level's tracks that can play: what a tap queues around itself, and what Play plays from the top. */
     private fun tracks() = level.items.filter { !it.container && it.playable }
 
-    /** A container opens; a track plays with the rest of this level queued around it, as in an album. */
+    /** A container opens; a track plays with the rest of this level queued around it, as in an album; a favourite plays. */
     private fun click(e: Entry) {
+        e.fav?.let { return if (e.playable) favorite(e, it) else toast(getString(R.string.shortcut, e.title)) }
         if (e.container) return open(Level(e.id, e.title))
         val r = e.res ?: return
         if (!e.playable) return toast(getString(R.string.unsupported_rate, e.title, r.hz.toString()))
@@ -332,20 +349,28 @@ class BrowseActivity : Activity() {
         }
     }
 
-    /** Sends one queue command to the room, off the main thread; only a failure shows. */
-    private fun send(tracks: List<Entry>, how: How, start: Int, what: String) {
+    /** Plays favourite [f] in the room. */
+    private fun favorite(e: Entry, f: Favorite) = command(e.title) { Sonos.favorite(it, f) }
+
+    /** Sends one queue command to the room. */
+    private fun send(tracks: List<Entry>, how: How, start: Int, what: String) = command(what) { r ->
+        val t0 = SystemClock.elapsedRealtime()
+        Sonos.play(r, tracks, how, start)
+        Log.i(TAG, "$how ${tracks.size} tracks on ${r.name} in ${SystemClock.elapsedRealtime() - t0} ms")
+    }
+
+    /** Runs [work] for the room off the main thread, playing [what]; only a failure shows. */
+    private fun command(what: String, work: (Room) -> Unit) {
         val r = player.room ?: return toast(getString(R.string.no_rooms))
         later(sonos) {
-            val t0 = SystemClock.elapsedRealtime()
             try {
-                Sonos.play(r, tracks, how, start)
-                Log.i(TAG, "$how ${tracks.size} tracks on ${r.name} in ${SystemClock.elapsedRealtime() - t0} ms")
+                work(r)
                 player.refresh()
             } catch (x: HttpException) {
-                Log.i(TAG, "$how on ${r.name}: $x")
+                Log.i(TAG, "$what on ${r.name}: $x")
                 runOnUiThread { toast(getString(R.string.cant_play, what)) }
             } catch (x: Exception) {
-                Log.i(TAG, "$how on ${r.name}: $x")
+                Log.i(TAG, "$what on ${r.name}: $x")
                 runOnUiThread { toast(if (Lan.wifi == null) getString(R.string.no_wifi) else getString(R.string.cant_play_reach, what, r.name)) }
             }
         }
@@ -406,7 +431,8 @@ class BrowseActivity : Activity() {
     private fun summary() {
         val l = level
         val top = server.library && stack.size == 1
-        play.visibility = if (l.items.any { !it.container && it.playable }) View.VISIBLE else View.GONE
+        // Not for favourites: each is its own thing to play, not a level's tracks.
+        play.visibility = if (!server.favorites && l.items.any { !it.container && it.playable }) View.VISIBLE else View.GONE
         scan.visibility = if (top) View.VISIBLE else View.GONE
         // The count in green once it's known; the server not answering in the warning colour; grey while loading.
         val busy = (top && scanning) || l.total < 0
@@ -415,6 +441,7 @@ class BrowseActivity : Activity() {
             top && scanning -> getString(R.string.scanning)
             l.error != null -> l.error
             l.total < 0 -> getString(R.string.loading)
+            server.favorites -> resources.getQuantityString(R.plurals.favorite_count, l.total, l.total)
             l.items.isNotEmpty() && l.items.none { it.container } -> resources.getQuantityString(R.plurals.track_count, l.total, l.total)
             else -> resources.getQuantityString(R.plurals.item_count, l.total, l.total)
         }

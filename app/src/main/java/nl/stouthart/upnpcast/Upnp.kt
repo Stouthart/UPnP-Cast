@@ -36,6 +36,7 @@ fun Room?.same(o: Room?) = if (this == null) o == null else o != null && id == o
 class Server(
     val udn: String, val name: String, val host: String, val control: String, val icon: String?,
     val library: Boolean = false,
+    val favorites: Boolean = false, // The household's Sonos favourites (FV:2), as the same player serves them.
 )
 
 private fun XmlPullParser.attr(name: String) = getAttributeValue(null, name) ?: ""
@@ -100,8 +101,32 @@ fun product(model: String): Product {
     }
 }
 
+private val SID = Regex("[?&]sid=(\\d{1,5})(&|$)") // A music service's number, in a link's query.
+private val SERVICE = Regex("<Service\\b([^>]*)>")
+private val ATTR = Regex("(\\w+)=\"([^\"]*)\"")
+
+/** The number of the music service [uri] comes from, as 31 for Qobuz in x-sonos-http:…?sid=31; null for none. */
+fun serviceId(uri: String): String? = if (uri.startsWith("x-sonos")) SID.find(uri)?.groupValues?.get(1) else null
+
+/**
+ * The music services by number, from a speaker's descriptor list (ListAvailableServices): <Service Id="31"
+ * Name="Qobuz" …>, its attributes in any order.
+ */
+fun serviceNames(list: String): Map<String, String> {
+    val out = HashMap<String, String>()
+    for (m in SERVICE.findAll(list)) {
+        val a = ATTR.findAll(m.groupValues[1]).associate { it.groupValues[1] to it.groupValues[2] }
+        val id = a["Id"]?.takeIf { it.all(Char::isDigit) } ?: continue
+        out[id] = (a["Name"] ?: continue).replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", "\"")
+            .replace("&apos;", "'").replace("&amp;", "&")
+    }
+    return out
+}
+
+private const val SONOS_RADIO = "303"
+
 /** Where a room's music comes from, as the Sonos app names it; [SERVER]: a UPnP server's link. */
-enum class Source { HDMI, SPDIF, TV, SPOTIFY, AIRPLAY, LIBRARY, LINE_IN, RADIO, SERVER, OTHER }
+enum class Source { HDMI, SPDIF, TV, SPOTIFY, AIRPLAY, LIBRARY, LINE_IN, SONOS_RADIO, RADIO, SERVER, OTHER }
 
 /**
  * The source of what plays, by its URI, as the speaker reports it. The TV's input by the soundbar's [model]: the speaker
@@ -122,6 +147,8 @@ fun source(uri: String, model: String = ""): Source {
             else -> Source.OTHER
         }
         uri.startsWith("x-sonos-spotify:") -> Source.SPOTIFY
+        // Sonos's own radio, service 303: its stations, and the tracks they play, as x-sonos-http:…?sid=303.
+        serviceId(uri) == SONOS_RADIO -> Source.SONOS_RADIO
         uri.startsWith("x-file-cifs:") -> Source.LIBRARY
         uri.startsWith("x-rincon-stream:") -> Source.LINE_IN
         listOf("x-rincon-mp3radio:", "x-sonosapi-stream:", "x-sonosapi-radio:", "x-sonosapi-hls:", "aac:").any { uri.startsWith(it) } ->
@@ -164,21 +191,26 @@ object Upnp {
     class Page(val entries: List<Entry>, val returned: Int, val total: Int)
 
     // Only what the rows and playback use: MinimServer honours the filter, which keeps genre and date off the wire.
-    private const val FILTER = "dc:title,dc:creator,upnp:artist,upnp:album,upnp:albumArtURI,upnp:class," +
+    private const val FILTER = "dc:title,dc:creator,upnp:artist,upnp:album,upnp:class," +
+        "upnp:albumArtURI,upnp:albumArtURI@dlna:profileID," +
         "res,res@protocolInfo,res@sampleFrequency,res@bitsPerSample,res@duration,@childCount"
 
     fun browse(s: Server, id: String, start: Int, count: Int) =
-        browse(s.control, if (s.library) Didl.library(s.control) else Didl.on(s.host), id, start, count)
+        if (s.favorites) page(s.control, id, "*", start, count) { Didl.favorites(it, s.control) } // With what plays them.
+        else browse(s.control, if (s.library) Didl.library(s.control) else Didl.on(s.host), id, start, count)
 
     /** A page of any ContentDirectory: a server's, or a Sonos queue's ("Q:0"); [url] vets the URLs in it. */
-    fun browse(control: String, url: (String) -> String?, id: String, start: Int, count: Int): Page {
+    fun browse(control: String, url: (String) -> String?, id: String, start: Int, count: Int): Page =
+        page(control, id, FILTER, start, count) { Didl.parse(it, url) }
+
+    private fun page(control: String, id: String, filter: String, start: Int, count: Int, parse: (String) -> List<Entry>): Page {
         val reply = Http.soap(
             control, "ContentDirectory", "Browse",
-            "<ObjectID>${esc(id)}</ObjectID><BrowseFlag>BrowseDirectChildren</BrowseFlag><Filter>$FILTER</Filter>" +
+            "<ObjectID>${esc(id)}</ObjectID><BrowseFlag>BrowseDirectChildren</BrowseFlag><Filter>$filter</Filter>" +
                 "<StartingIndex>$start</StartingIndex><RequestedCount>$count</RequestedCount><SortCriteria></SortCriteria>",
         )
         val (result, returned, total) = args(reply, "Result", "NumberReturned", "TotalMatches")
-        return Page(Didl.parse(result ?: "", url), returned?.toIntOrNull() ?: 0, total?.toIntOrNull() ?: 0)
+        return Page(parse(result ?: ""), returned?.toIntOrNull() ?: 0, total?.toIntOrNull() ?: 0)
     }
 
     /** A container's playable tracks over all its pages, up to [max]: what a menu on an album queues. */

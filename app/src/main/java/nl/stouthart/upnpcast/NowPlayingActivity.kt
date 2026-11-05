@@ -45,7 +45,7 @@ class NowPlayingActivity : Activity() {
      */
     private fun size() {
         val m = resources.displayMetrics
-        largest = m.widthPixels - (48 * m.density).toInt()
+        largest = m.widthPixels - (40 * m.density).toInt() // The layout's 20dp sides.
         cover(largest)
     }
 

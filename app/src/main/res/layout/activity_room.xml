@@ -37,11 +37,13 @@
             android:text="@string/room_settings"
             android:textSize="22sp" />
 
-        <!-- A row per room; the open room's settings, below, go right under its row. -->
+        <!-- A row per room; the open room's settings, below, go right under its row, opening and closing as the App
+             settings card does. Not on the way in: Android animates nothing before the sheet's window shows. -->
         <LinearLayout
             android:id="@+id/rooms"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:animateLayoutChanges="true"
             android:orientation="vertical" />
 
         <LinearLayout
@@ -59,10 +61,11 @@
                 android:layout_marginTop="16dp"
                 android:layout_marginStart="4dp" />
 
+            <!-- Each card leaves its padding unclipped: a switch at its foot reaches 13dp into it (Toggle), and its
+                 ripple shows whole. -->
             <LinearLayout
                 android:id="@+id/trueplay_card"
                 style="@style/Card"
-                android:clipChildren="false"
                 android:clipToPadding="false"
                 android:layout_marginTop="16dp"
                 android:visibility="gone">
@@ -85,7 +88,6 @@
             <LinearLayout
                 android:id="@+id/eq_card"
                 style="@style/Card"
-                android:clipChildren="false"
                 android:clipToPadding="false"
                 android:layout_marginTop="16dp"
                 android:visibility="gone">
@@ -115,7 +117,6 @@
             <LinearLayout
                 android:id="@+id/limit_card"
                 style="@style/Card"
-                android:clipChildren="false"
                 android:clipToPadding="false"
                 android:layout_marginTop="16dp"
                 android:visibility="gone">
@@ -131,7 +132,6 @@
             <LinearLayout
                 android:id="@+id/sub_card"
                 style="@style/Card"
-                android:clipChildren="false"
                 android:clipToPadding="false"
                 android:layout_marginTop="16dp"
                 android:visibility="gone">
@@ -177,7 +177,6 @@
             <LinearLayout
                 android:id="@+id/theater_card"
                 style="@style/Card"
-                android:clipChildren="false"
                 android:clipToPadding="false"
                 android:layout_marginTop="16dp"
                 android:visibility="gone">
@@ -204,7 +203,6 @@
             <LinearLayout
                 android:id="@+id/hardware_card"
                 style="@style/Card"
-                android:clipChildren="false"
                 android:clipToPadding="false"
                 android:layout_marginTop="16dp"
                 android:visibility="gone">

@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Now Playing: the player's views at full size, plus progress, transport and play mode. The cover is sized in code. -->
+<!-- Now Playing: the player's views at full size, plus progress, transport and play mode. The cover is sized in code.
+     20dp sides: the cover and Queue there, the text and bars 16dp further in, at 36dp from the screen's edge, where
+     every other screen's content and the mini player's cover and Play circle are. -->
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/scroll"
     android:layout_width="match_parent"
@@ -13,7 +15,7 @@
         android:layout_height="wrap_content"
         android:gravity="center_horizontal"
         android:orientation="vertical"
-        android:paddingHorizontal="24dp"
+        android:paddingHorizontal="20dp"
         android:paddingBottom="24dp"
         android:paddingTop="8dp">
 
@@ -209,20 +211,23 @@
                 android:tint="@color/text2" />
         </LinearLayout>
 
+        <!-- 9dp above and -11dp below: the icon's box reaches 11dp past the speaker and the slider both ways, so the
+             row is 20dp from the controls and the Queue button, as the rows above are from each other. -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
+            android:layout_marginTop="9dp"
+            android:layout_marginBottom="-11dp"
             android:gravity="center_vertical"
             android:orientation="horizontal"
             android:paddingHorizontal="16dp">
 
-            <!-- -8dp: the icon itself, not its touch target, starts on the line. -->
+            <!-- -11dp: the speaker itself, drawn 3dp into its box, not its touch target, starts on the line. -->
             <ImageView
                 android:id="@+id/player_mute"
                 android:layout_width="40dp"
                 android:layout_height="40dp"
-                android:layout_marginStart="-8dp"
+                android:layout_marginStart="-11dp"
                 android:background="?android:attr/selectableItemBackgroundBorderless"
                 android:contentDescription="@string/mute"
                 android:padding="8dp"
@@ -252,7 +257,7 @@
         <TextView
             android:id="@+id/player_queue"
             style="@style/Button"
-            android:layout_marginTop="24dp"
+            android:layout_marginTop="20dp"
             android:background="@drawable/button_quiet"
             android:text="@string/queue"
             android:textColor="@color/text" />

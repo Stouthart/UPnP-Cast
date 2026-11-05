@@ -12,7 +12,7 @@
         android:id="@+id/art"
         android:layout_width="match_parent"
         android:layout_height="120dp"
-        android:background="@drawable/tile"
+        android:background="@drawable/tile_large"
         android:clipToOutline="true"
         android:importantForAccessibility="no"
         android:scaleType="centerCrop" />
@@ -44,12 +44,13 @@
             android:textColor="@color/text2"
             android:textSize="13sp" />
 
-        <!-- Not focusable, so a tap anywhere else still selects the tile. -->
+        <!-- Not focusable, so a tap anywhere else still selects the tile. The dots stop 10dp inside their box:
+             they end at the cover's edge. -->
         <ImageView
             android:id="@+id/more"
-            android:layout_width="32dp"
+            android:layout_width="24dp"
             android:layout_height="24dp"
-            android:layout_marginEnd="-6dp"
+            android:layout_marginEnd="-10dp"
             android:background="?android:attr/selectableItemBackgroundBorderless"
             android:contentDescription="@string/more"
             android:focusable="false"

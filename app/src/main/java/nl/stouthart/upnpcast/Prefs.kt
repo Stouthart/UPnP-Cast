@@ -16,6 +16,7 @@ object Prefs {
     private const val DEVICES = "devices" // The main screen's file, beside the speakers' and servers' addresses.
     private const val ROOM = "room" // A room among those that play together: theirs is the group the player controls.
     private const val MODEL = "model:" // + a player's id: its model, kept, as a player doesn't change it.
+    private const val SERVICE = "service:" // + a music service's number: its name, as the speakers list it.
 
     private fun prefs(c: Context) = c.getSharedPreferences(FILE, Context.MODE_PRIVATE)
 
@@ -29,6 +30,13 @@ object Prefs {
 
     fun model(c: Context, id: String, m: String) =
         c.getSharedPreferences(DEVICES, Context.MODE_PRIVATE).edit().putString(MODEL + id, m).apply()
+
+    /** A music service's name by its number in a link, as sid=31, as the speakers list it: Now Playing's source. */
+    fun service(c: Context, id: String): String? = c.getSharedPreferences(DEVICES, Context.MODE_PRIVATE).getString(SERVICE + id, null)
+
+    fun services(c: Context, all: Map<String, String>) = c.getSharedPreferences(DEVICES, Context.MODE_PRIVATE).edit().apply {
+        for ((id, name) in all) putString(SERVICE + id, name)
+    }.apply()
 
     // 2 s by default: about half the CPU of 1 s, and Now Playing's progress still moves every second on its own.
     fun poll(c: Context) = prefs(c).getInt(POLL, 2).coerceIn(1, 10)

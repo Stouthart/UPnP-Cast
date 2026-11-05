@@ -1,8 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!-- warning and success belong to the palette, which stays whole in colors.xml; this app has no use for them, and the
-     release build drops them anyway. -->
-<lint>
-    <issue id="UnusedResources">
-        <ignore regexp="R\.color\.(warning|success)\b" />
-    </issue>
-</lint>

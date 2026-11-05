@@ -7,6 +7,8 @@
     android:fitsSystemWindows="true"
     android:orientation="vertical">
 
+    <!-- The title row reaches into the card's padding, as on the opening screen's Rooms card: its last glyph ends at
+         the card's content edge, where the mini player's Play circle and the list's › do. -->
     <LinearLayout
         style="@style/Card"
         android:layout_marginHorizontal="16dp"
@@ -15,6 +17,7 @@
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:layout_marginEnd="-20dp"
             android:gravity="center_vertical"
             android:orientation="horizontal">
 
@@ -76,11 +79,13 @@
                 android:padding="8dp"
                 android:src="@drawable/ic_home" />
 
-            <!-- Where the Queue card has Clear queue: switches between the list and tiles. -->
+            <!-- Where the Queue card has Clear queue: switches between the list and tiles. Its glyph stops 11dp inside
+                 its 40dp, so 9dp in from the row's end, as Room settings. -->
             <ImageView
                 android:id="@+id/view_type"
                 android:layout_width="40dp"
                 android:layout_height="40dp"
+                android:layout_marginEnd="9dp"
                 android:background="?android:attr/selectableItemBackgroundBorderless"
                 android:contentDescription="@string/grid_list"
                 android:padding="8dp"

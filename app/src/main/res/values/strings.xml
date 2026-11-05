@@ -24,6 +24,13 @@
         <item quantity="one">%1$d room</item>
         <item quantity="other">%1$d rooms</item>
     </plurals>
+    <!-- Favorites: the household's Sonos favourites, as the speakers keep them (Sonos's sonos_favorites, without its name). -->
+    <string name="favorites">Favorites</string>
+    <plurals name="favorite_count"> <!-- Browse's count of them. -->
+        <item quantity="one">%1$d favorite</item>
+        <item quantity="other">%1$d favorites</item>
+    </plurals>
+    <string name="shortcut">%1$s is a shortcut to a page of its service, which can\'t be played here.</string>
     <plurals name="server_count">
         <item quantity="one">%1$d server</item>
         <item quantity="other">%1$d servers</item>
@@ -61,6 +68,7 @@
     <string name="airplay" translatable="false">AirPlay</string>
     <string name="line_in">Line-in</string>
     <string name="radio">Radio</string>
+    <string name="sonos_radio" translatable="false">Sonos Radio</string> <!-- Sonos's sheet_title_sonos_radio. -->
     <string name="play">Play</string>
     <string name="pause">Pause</string>
     <string name="volume">Volume</string>

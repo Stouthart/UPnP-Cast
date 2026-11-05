@@ -17,7 +17,6 @@ import android.widget.SeekBar
 import android.widget.TextView
 import android.widget.Toast
 import java.net.URL
-import java.net.URLEncoder
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
@@ -62,6 +61,10 @@ class Player(private val a: Activity) {
         @Volatile
         private var seen = false
 
+        // The speakers' list of music services, read at most once a run unless it failed: kept in Prefs, and read again
+        // only for a service it hadn't, as one added since.
+        private val listed = java.util.concurrent.atomic.AtomicBoolean()
+
         /** The UPnP servers' names by address, as the main screen found them: Now Playing's source for their tracks. */
         val servers: MutableMap<String, String> = ConcurrentHashMap()
 
@@ -76,11 +79,12 @@ class Player(private val a: Activity) {
     /**
      * One poll's answer, [at] the uptime the position arrived; volume -1 and the nulls mean "not asked this time".
      * [tv]: the TV input's format, asked only on Now Playing while the TV plays. [household]: read again when the
-     * group reported itself changed.
+     * group reported itself changed. [station]: a radio stream's, read once per stream.
      */
     private class Answer(
         val state: String, val pos: Position, val at: Long, val track: Track?, val volume: Int, val muted: Boolean?, val mode: Mode?,
         val queued: Boolean?, val tv: String?, val household: Upnp.Topology?, val group: String? = null,
+        val station: Station? = null,
     )
 
     /** Where covers may come from besides the speaker itself: the servers this app knows. */
@@ -127,6 +131,8 @@ class Player(private val a: Activity) {
     private var ticks = 0 // The poll thread's, like the two below.
     private var lastMeta: String? = null // TrackMetaData is parsed only when it differs from the last.
     private var lastTrack: Track? = null
+    private var stationFor = "" // The stream lastStation was read for: asked again only for another one.
+    private var lastStation: Station? = null
     @Volatile
     private var grouping: String? = null // The group as the coordinator last reported it; null: not asked yet.
 
@@ -520,6 +526,24 @@ class Player(private val a: Activity) {
                 lastTrack = Sonos.track(p.meta)
                 lastMeta = p.meta
             }
+            // A radio stream's station, once per stream link (~10 ms): for Sonos Radio once per track, as each has its
+            // own. A failure is asked again at the next poll, and meanwhile shows no station, not the one before.
+            if (source(p.uri).let { it != Source.RADIO && it != Source.SONOS_RADIO }) {
+                stationFor = ""
+                lastStation = null
+            } else if (p.uri != stationFor) {
+                lastStation = null
+                runCatching { Sonos.station(r) }.onSuccess {
+                    lastStation = it
+                    stationFor = p.uri
+                }
+            }
+            // A music service's name for Now Playing, as Qobuz: from the speakers' own list, read for one not kept yet.
+            if (source(p.uri) == Source.OTHER) serviceId(p.uri)?.let { id ->
+                if (Prefs.service(a, id) == null && listed.compareAndSet(false, true)) {
+                    runCatching { Sonos.services(r) }.onSuccess { Prefs.services(a, it) }.onFailure { listed.set(false) }
+                }
+            }
             // With the slow values, whether the speakers were grouped anew, also by the Sonos app or Spotify; only then
             // the household itself (~4 KB), once per change. Neither failing keeps the rest from showing.
             val now = if (all) runCatching { Sonos.group(r) }.getOrNull() else null
@@ -530,7 +554,7 @@ class Player(private val a: Activity) {
                 if (all && full) Sonos.mode(r) else null, if (all && media) Sonos.queued(r) else null,
                 // Its own failure only leaves the line empty; the player still shows the rest.
                 if (full && p.uri.startsWith("x-sonos-htastream:")) runCatching { Sonos.tvFormat(r) }.getOrNull() else null,
-                household, now,
+                household, now, lastStation,
             )
         }.getOrNull()
         a.runOnUiThread { if (g == gen) show(r, answer) }
@@ -593,7 +617,10 @@ class Player(private val a: Activity) {
         val now = SystemClock.uptimeMillis()
         if (now - l.answer.at > SEED_MS) return
         val a = l.answer
-        show(r, if (now - l.slow <= SEED_MS) a else Answer(a.state, a.pos, a.at, a.track, -1, null, null, null, a.tv, null), seeded = true)
+        show(
+            r, if (now - l.slow <= SEED_MS) a else Answer(a.state, a.pos, a.at, a.track, -1, null, null, null, a.tv, null, station = a.station),
+            seeded = true,
+        )
     }
 
     /** Keeps [a] for the next screen's player, with the volume, mute and play mode of the last answer that had them. */
@@ -603,6 +630,7 @@ class Player(private val a: Activity) {
         val kept = Answer(
             a.state, a.pos, a.at, a.track, s?.volume ?: a.volume, s?.muted ?: a.muted, s?.mode ?: a.mode,
             s?.queued ?: a.queued, a.tv, null, // Never the household: a seed doesn't regroup.
+            station = a.station,
         )
         last = Last(r, kept, p?.slow ?: a.at)
     }
@@ -626,19 +654,32 @@ class Player(private val a: Activity) {
             answer.muted?.let { muted(it) }
             answer.queued?.let { queued = it }
         }
+        val st = answer?.station
+        val kind = if (answer != null) source(answer.pos.uri, Prefs.model(a, r.id)) else Source.OTHER
         val name = when {
             answer == null -> a.unreachable(r.name)
             t != null -> t.title
-            // Sources without metadata, known by their URI: the TV input, and Spotify Connect while paused.
+            // Sources without metadata, known by their URI: the TV input, and Spotify Connect while paused; a radio
+            // station by its name.
             answer.pos.uri.startsWith("x-sonos-htastream:") -> a.getString(R.string.tv)
             answer.pos.uri.startsWith("x-sonos-vli:") && ",spotify:" in answer.pos.uri -> a.getString(R.string.spotify)
+            st != null && st.name.isNotEmpty() -> st.name
             else -> a.getString(R.string.no_content)
         }
-        val detail = listOf(r.name, t?.artist ?: "", if (full) t?.album ?: "" else "").filter { it.isNotEmpty() }.joinToString(" · ")
-        val cover = t?.let { cover(r, it.art, it.uri) }
+        // A radio stream: its station where the artist goes, as the Sonos app has it, and its logo as the cover. Not
+        // twice: between songs a station may send its own name as the song.
+        val artist = t?.artist?.ifEmpty { st?.name?.takeIf { it != t.title } }.orEmpty()
+        val detail = listOf(r.name, artist, if (full) t?.album ?: "" else "").filter { it.isNotEmpty() }.joinToString(" · ")
+        val cover = when {
+            // Sonos Radio: the speaker's copy of a track's cover can be another station's logo; its station's is right.
+            kind == Source.SONOS_RADIO -> st?.let { cover(r, it.art, it.uri) }
+            t != null && t.art.isNotEmpty() -> cover(r, t.art, t.uri)
+            st != null -> cover(r, st.art, st.uri)
+            else -> null
+        }
         // Now Playing's line: where it comes from, unless the title says so already, then its format. The TV has no
         // track, but its input format.
-        val src = if (full && answer != null) sourceName(r, answer.pos.uri).takeIf { it != name } ?: "" else ""
+        val src = if (full && answer != null) sourceName(kind, answer.pos.uri).takeIf { it != name } ?: "" else ""
         val quality = listOf(src, t?.format ?: answer?.tv ?: "").filter { it.isNotEmpty() }.joinToString(" · ")
         val now = "$name\n$detail\n$cover\n$quality"
         if (now != shown) {
@@ -713,8 +754,11 @@ class Player(private val a: Activity) {
         onPosition?.invoke(answer.pos, queued)
     }
 
-    /** [uri]'s source in the Sonos app's words, or "" for one it doesn't name, as other services or a server unknown. */
-    private fun sourceName(r: Room, uri: String) = when (source(uri, Prefs.model(a, r.id))) {
+    /**
+     * [uri]'s source in the Sonos app's words, a music service as the speakers name it, or "" for one without a name, as
+     * a server unknown.
+     */
+    private fun sourceName(kind: Source, uri: String) = when (kind) {
         Source.HDMI -> a.getString(R.string.hdmi)
         Source.SPDIF -> a.getString(R.string.spdif)
         Source.SPOTIFY -> a.getString(R.string.spotify)
@@ -722,8 +766,10 @@ class Player(private val a: Activity) {
         Source.LIBRARY -> a.getString(R.string.music_library)
         Source.LINE_IN -> a.getString(R.string.line_in)
         Source.RADIO -> a.getString(R.string.radio)
+        Source.SONOS_RADIO -> a.getString(R.string.sonos_radio)
         Source.SERVER -> runCatching { URL(uri).host }.getOrNull()?.let { servers[it] } ?: ""
-        Source.TV, Source.OTHER -> "" // The title says TV already.
+        Source.OTHER -> serviceId(uri)?.let { Prefs.service(a, it) } ?: ""
+        Source.TV -> "" // The title says TV already.
     }
 
     /**
@@ -735,6 +781,6 @@ class Player(private val a: Activity) {
         if (ref.isEmpty()) return null
         val u = runCatching { URL(URL("http://${r.host}/"), ref) }.getOrNull() ?: return null
         if (u.protocol == "http" && (u.host == r.host.substringBefore(':') || u.host in hosts)) return u.toString()
-        return if (uri.isEmpty()) null else "http://${r.host}/getaa?s=1&u=${URLEncoder.encode(uri, Charsets.UTF_8)}"
+        return if (uri.isEmpty()) null else Sonos.copy(r.host, uri)
     }
 }

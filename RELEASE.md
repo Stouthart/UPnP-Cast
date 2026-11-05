@@ -1,8 +1,18 @@
-<!-- 1.4 - Copyright (C) 2026 Stouthart. All rights reserved. -->
+<!-- 1.5 - Copyright (C) 2026 Stouthart. All rights reserved. -->
 
 # Release notes
 
 Highlights per version, newest first.
+
+## 1.5 - November 2026
+
+- **Favorites:** a new panel on the opening screen opens your Sonos system's favourites, such as radio stations and playlists, with their covers; a tap plays one in the chosen room. A station starts at once; a playlist or album replaces the queue. Shortcuts to a service's pages can't be played over UPnP, so they're greyed out.
+- **Radio as the Sonos app shows it:** a station now shows its name after the room, such as **Living Room · 90s90s Trance**, and its logo as the cover, the speaker's own copy, so the phone stays on the local network. Some stations showed a piece of their stream's link there instead, and no cover. The format line names the codec, such as `Radio · MP3`, where it showed `*`. **Sonos Radio** is named as such, with its station's picture: the speaker's copy of a track's cover could be another station's logo. After Play, the station's name stays while the speaker connects, where it showed `ZPSTR_CONNECTING` and `ZPSTR_BUFFERING`.
+- **Music services by name:** Now Playing names the service a track comes from, such as **Qobuz · MP3**, as the speakers name it in their own list of services, read once and kept. Before, a service other than Spotify showed the format alone. Spotify played from the Sonos app no longer shows `SPOTIFY` as its format: the speaker reports none for it, only for Spotify Connect.
+- **Even margins:** the mini player has as much room below its volume slider as above its cover. In App settings and Room settings a slider sits close under its name, and as far from what follows as any other row, also at a card's foot. Now Playing's text and bars line up with every other screen's content, its cover a little larger; the icon before a slider starts on its label's line, and Clear queue ends where the other screens' buttons do.
+- **Room settings opens smoothly:** a room's settings now slide open and closed under its row, as App settings does, then scroll into view.
+- **Calmer corners:** cards, rows, covers, buttons and choices share one corner, less round than before; the small covers and icons in rows keep theirs.
+- **Sharper covers:** from a server that offers a cover in several sizes, the largest, where Browse and Now Playing showed the thumbnail.
 
 ## 1.4 - November 2026
 

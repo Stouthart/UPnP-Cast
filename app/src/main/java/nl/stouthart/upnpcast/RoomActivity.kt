@@ -1,5 +1,6 @@
 package nl.stouthart.upnpcast
 
+import android.animation.LayoutTransition
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
@@ -175,6 +176,8 @@ class RoomActivity : Activity() {
         }
         findViewById<ImageView>(R.id.chevron).apply {
             setImageResource(R.drawable.ic_expand)
+            // ⌄ stops 6dp inside its box, › 8dp: 2dp further in, so it too ends 20dp inside the row.
+            (layoutParams as ViewGroup.MarginLayoutParams).marginEnd = -(2 * resources.displayMetrics.density).toInt()
             shown = true
         }
         stateDescription = getString(R.string.collapsed)
@@ -287,15 +290,41 @@ class RoomActivity : Activity() {
 
     /**
      * Once the cards are laid out: [row] and the first half screen of its settings in view, scrolled to only when
-     * they aren't, so the title stays while they show already.
+     * they aren't, so the title stays while they show already. After the list's opening, as the App settings card's:
+     * while the list and the screen grow, animated, a scroll stops at their height so far.
      */
     private fun reveal(row: View) {
         page.addOnLayoutChangeListener(object : View.OnLayoutChangeListener {
             override fun onLayoutChange(v: View, l: Int, t: Int, r: Int, b: Int, ol: Int, ot: Int, or: Int, ob: Int) {
                 v.removeOnLayoutChangeListener(this)
-                val gap = (12 * resources.displayMetrics.density).toInt()
-                val shown = Rect(0, -row.height - gap, v.width, minOf(v.height, scroll.height / 2))
-                v.post { v.requestRectangleOnScreen(shown, false) } // Not inside the layout pass.
+                v.post { after(list.layoutTransition) { show(v, row) } } // Not inside the layout pass.
+            }
+        })
+    }
+
+    private fun show(v: View, row: View) {
+        val gap = (12 * resources.displayMetrics.density).toInt()
+        v.requestRectangleOnScreen(Rect(0, -row.height - gap, v.width, minOf(v.height, scroll.height / 2)), false)
+    }
+
+    /**
+     * [then] once [t] has ended, at once if it isn't running. Checked after each end, not in it: the last animation to
+     * end may still count as running while its listeners are told; and a listener isn't removed while they are.
+     */
+    private fun after(t: LayoutTransition?, then: () -> Unit) {
+        if (t == null || !t.isRunning) return then()
+        t.addTransitionListener(object : LayoutTransition.TransitionListener {
+            private var done = false
+
+            override fun startTransition(t: LayoutTransition, c: ViewGroup?, v: View?, type: Int) = Unit
+
+            override fun endTransition(t: LayoutTransition, c: ViewGroup?, v: View?, type: Int) {
+                list.post {
+                    if (done || t.isRunning) return@post
+                    done = true
+                    t.removeTransitionListener(this)
+                    then()
+                }
             }
         })
     }
@@ -367,7 +396,12 @@ class RoomActivity : Activity() {
         init {
             val label = getString(name)
             row.findViewById<TextView>(R.id.level_name).text = label
-            row.findViewById<ImageView>(R.id.level_icon).setImageResource(icon)
+            row.findViewById<ImageView>(R.id.level_icon).let {
+                it.setImageResource(icon)
+                // level.xml starts a glyph drawn 3dp into its box on the name's line; the Sub's is drawn 4dp in.
+                if (icon == R.drawable.ic_sub) (it.layoutParams as ViewGroup.MarginLayoutParams).marginStart =
+                    -(12 * resources.displayMetrics.density).toInt()
+            }
             // Names at one size, the largest from 15 sp down at which the longest fits the value's 48dp, as fit()
             // sizes Sonos's labels in a row of segments: the slider keeps the mini player's width.
             if (names.isNotEmpty()) {

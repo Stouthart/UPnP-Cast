@@ -7,14 +7,18 @@
     android:fitsSystemWindows="true"
     android:orientation="vertical">
 
+    <!-- The title row reaches into the card's padding, as Browse's: Clear queue's text ends on the card's content edge,
+         where the mini player's Play circle ends. The padding unclipped, so the link's ripple shows whole. -->
     <LinearLayout
         style="@style/Card"
         android:layout_marginHorizontal="16dp"
-        android:layout_marginTop="16dp">
+        android:layout_marginTop="16dp"
+        android:clipToPadding="false">
 
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:layout_marginEnd="-20dp"
             android:gravity="center_vertical"
             android:orientation="horizontal">
 
@@ -43,6 +47,7 @@
                 android:id="@+id/clear"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
+                android:layout_marginEnd="12dp"
                 android:background="?android:attr/selectableItemBackground"
                 android:fontFamily="sans-serif-medium"
                 android:padding="8dp"
