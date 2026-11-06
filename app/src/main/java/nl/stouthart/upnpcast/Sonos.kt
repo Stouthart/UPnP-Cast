@@ -27,9 +27,11 @@ class Track(
 
 /**
  * [title] is no more than its stream link's file name, as regc-90s90strance-mp3-192-…?sABC=… for
- * …/regc-90s90strance-mp3-192-2383645?sABC=…: not a name to show.
+ * …/regc-90s90strance-mp3-192-2383645?sABC=…: not a name to show. Radio only: a file's title may well be its name, as
+ * Episode.mp3 on a share without tags, and is then the name to show.
  */
 fun linkTitle(title: String, uri: String): Boolean {
+    if (source(uri).let { it != Source.RADIO && it != Source.SONOS_RADIO }) return false
     val file = uri.substringBefore('?').substringAfterLast('/')
     return file.isNotEmpty() && title.substringBefore('?') == file
 }
@@ -427,16 +429,28 @@ object Sonos {
      */
     fun play(r: Room, tracks: List<Entry>, how: How, start: Int = 0) {
         val queued = queued(r)
-        val first = when (how) {
-            How.REPLACE -> {
-                avt(r, "RemoveAllTracksFromQueue")
-                add(r, tracks, 0, false)
+        // With shuffle on, the speaker counts queue positions in its shuffled order, so a track's number in the order
+        // added plays another. Off while the queue fills and the track starts, then on again: the speaker shuffles the
+        // rest and keeps that track playing, as the Sonos app does. Back on also after a failure, if it can be.
+        val plays = how == How.NOW || how == How.REPLACE
+        val shuffled = if (plays) mode(r).takeIf { it.shuffle } else null
+        if (shuffled != null) mode(r, Mode(false, shuffled.repeat))
+        try {
+            val first = when (how) {
+                How.REPLACE -> {
+                    avt(r, "RemoveAllTracksFromQueue")
+                    add(r, tracks, 0, false)
+                }
+                // After the current track while the queue plays; otherwise there is no current track to follow.
+                How.NOW, How.NEXT -> add(r, tracks, if (queued) position(r).index + 1 else 0, queued) // Index only: no parse.
+                How.END -> add(r, tracks, 0, false)
             }
-            // After the current track while the queue plays; otherwise there is no current track to follow.
-            How.NOW, How.NEXT -> add(r, tracks, if (queued) position(r).index + 1 else 0, queued) // Index only: no parse.
-            How.END -> add(r, tracks, 0, false)
+            if (plays) start(r, first + start, queued)
+        } catch (e: Exception) {
+            if (shuffled != null) runCatching { mode(r, shuffled) }
+            throw e
         }
-        if (how == How.NOW || how == How.REPLACE) start(r, first + start, queued)
+        if (shuffled != null) mode(r, shuffled)
     }
 
     /**
@@ -453,12 +467,15 @@ object Sonos {
         }
         val queued = queued(r)
         avt(r, "RemoveAllTracksFromQueue")
-        avt(
+        val added = avt(
             r, "AddURIToQueue",
             "<EnqueuedURI>$uri</EnqueuedURI><EnqueuedURIMetaData>$md</EnqueuedURIMetaData>" +
                 "<DesiredFirstTrackNumberEnqueued>0</DesiredFirstTrackNumberEnqueued><EnqueueAsNext>0</EnqueueAsNext>",
         )
-        start(r, 1, queued)
+        // From where the speaker put it, as play() does: another controller may have queued something since the clear.
+        val first = Upnp.arg(added, "FirstTrackNumberEnqueued")?.toIntOrNull()?.takeIf { it > 0 }
+            ?: throw IOException("No queue position")
+        start(r, first, queued)
     }
 
     /** Plays queue position [n] (1-based), switching the room to its queue first when it plays something else. */

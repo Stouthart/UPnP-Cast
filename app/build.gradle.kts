@@ -12,8 +12,8 @@ android {
         applicationId = "nl.stouthart.upnpcast"
         minSdk = 34 // Android 14; tested on 16 (RedMagic Astra) and 17 (S25 Edge).
         targetSdk = 37
-        versionCode = 8 // Keeps counting up: the phones carried the internal 0.1 builds as 1.
-        versionName = "1.5"
+        versionCode = 9 // Keeps counting up: the phones carried the internal 0.1 builds as 1.
+        versionName = "2.0"
     }
 
     buildTypes {

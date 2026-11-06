@@ -30,11 +30,14 @@
             android:layout_weight="1"
             android:orientation="vertical">
 
+            <!-- A title too long for the row slides to its end and back once, as it changes or the screen shows again
+                 (Player.glide), its edges fading while it moves; at rest it ends in "…". Now Playing has two lines. -->
             <TextView
                 android:id="@+id/player_title"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:ellipsize="end"
+                android:fadingEdgeLength="16dp"
                 android:fontFamily="sans-serif-medium"
                 android:maxLines="1"
                 android:textColor="@color/text"

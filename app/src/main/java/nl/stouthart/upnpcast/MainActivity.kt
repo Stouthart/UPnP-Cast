@@ -614,6 +614,7 @@ class MainActivity : Activity() {
             .putExtra(BrowseActivity.NAME, s.name)
             .putExtra(BrowseActivity.LIBRARY, s.library)
             .putExtra(BrowseActivity.FAVORITES, s.favorites)
+        Player.hosts(i, player.hosts) // Every server's covers in its player: the track playing may be another's.
         room?.let {
             i.putExtra(BrowseActivity.ROOM_ID, it.id)
                 .putExtra(BrowseActivity.ROOM_NAME, it.name)

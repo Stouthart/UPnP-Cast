@@ -1,20 +1,20 @@
-<!-- 1.5 - Copyright (C) 2026 Stouthart. All rights reserved. -->
+<!-- 2.0 - Copyright (C) 2026 Stouthart. All rights reserved. -->
 
 # Play a UPnP music library on Sonos
 
-A small Android app that browses a **UPnP/DLNA** media server, such as **MinimServer**, and plays its music on **Sonos** speakers, with the queue, the volume and Now Playing at hand. The Sonos system's own **Music library**, the shared folders its speakers play from, is there too. The Sonos app can't play from a UPnP server. UPnP Cast hands the server's own links to the speaker, which then fetches the music itself: the phone isn't in the audio path, so playback goes on when the phone sleeps. No cloud, no ads, no account, no background service, and nothing beyond Android itself: the app is 242 KB.
+A small Android app that browses a **UPnP/DLNA** media server, such as **MinimServer**, and plays its music on **Sonos** speakers, with the queue, the volume and Now Playing at hand. The Sonos system's own **Music library**, the shared folders its speakers play from, is there too. The Sonos app can't play from a UPnP server. UPnP Cast hands the server's own links to the speaker, which then fetches the music itself: the phone isn't in the audio path, so playback goes on when the phone sleeps. No cloud, no ads, no account, no background service, and nothing beyond Android itself: the app is 246 KB.
 
 <p align="center"><img src="docs/screenshot-astra-home.png" width="240" alt="UPnP Cast on a RedMagic Astra: the Kitchen and the Living Room, Favorites, MinimServer and the Music library, with music playing in the Living Room"> <img src="docs/screenshot-astra-room.png" width="240" alt="Room settings in UPnP Cast on a RedMagic Astra: the Living Room open, tuned by Trueplay, with its EQ and Volume limit"> <img src="docs/screenshot-astra-minimserver.png" width="240" alt="UPnP Cast browsing MinimServer on a RedMagic Astra: its 12 top-level views as a grid of covers, with the mini player below"></p>
 
-This is **version 1.5**. The [release notes](RELEASE.md) list what each version changed.
+This is **version 2.0**. The [release notes](RELEASE.md) list what each version changed.
 
 ## What it does
 
 | Screen         | What it shows                                                                                                         |
 | -------------- | --------------------------------------------------------------------------------------------------------------------- |
 | Opening screen | The Sonos rooms, each with an icon for its kind of speaker and its model, such as Era 300, Favorites, the UPnP/DLNA servers on the network and the Sonos Music library, and the settings |
-| Browse         | A server's own categories, as a list or as tiles, with covers and each track's format, such as `FLAC 44.1 kHz 16-bit`, and in tiles just its length |
-| Mini player    | At the foot of every screen, from the first time the room has anything loaded; not without WiFi or a Sonos room: the cover, the title, the room and artist, Play/Pause, volume and mute |
+| Browse         | A server's own categories, as a list or as tiles, with covers and each track's format, such as `FLAC 44.1 kHz 16-bit`, and in tiles just its length; in an album each track's number before its title |
+| Mini player    | At the foot of every screen, from the first time the room has anything loaded; not without WiFi or a Sonos room: the cover, the title, the room and artist, Play/Pause, volume and mute; a title too long for its row slides to its end and back once |
 | Now Playing    | A large cover, the source and the format, such as `MinimServer · FLAC 96 kHz 24-bit`, `Qobuz · MP3` or on the TV `HDMI · Dolby Atmos (MAT)`, the format in green when it's lossless, a progress bar to seek, Shuffle, Previous, Play/Pause, Next, Repeat, Quick skip if set, volume and mute |
 | Queue          | The room's queue with the playing track marked; a tap plays a track, and Clear queue empties it                       |
 | Room settings  | From the icon on the Rooms card: each room's own settings, as in the Sonos app: Trueplay, EQ, Volume limit, Sub audio, Home theater and Hardware |
@@ -31,10 +31,10 @@ Developed and tested on a **Samsung Galaxy S25 Edge** (One UI 9, Android 17) and
 
 ## Installation
 
-Download `UPnP-Cast-1.5.apk` from the [latest release] and open it on the phone; Android asks to allow installing apps from that source first. Or install it from a computer with the phone connected over USB or wireless debugging:
+Download `UPnP-Cast-2.0.apk` from the [latest release] and open it on the phone; Android asks to allow installing apps from that source first. Or install it from a computer with the phone connected over USB or wireless debugging:
 
 ```bash
-adb install UPnP-Cast-1.5.apk
+adb install UPnP-Cast-2.0.apk
 ```
 
 ### Building it yourself

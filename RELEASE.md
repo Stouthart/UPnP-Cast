@@ -1,8 +1,14 @@
-<!-- 1.5 - Copyright (C) 2026 Stouthart. All rights reserved. -->
+<!-- 2.0 - Copyright (C) 2026 Stouthart. All rights reserved. -->
 
 # Release notes
 
 Highlights per version, newest first.
+
+## 2.0 - November 2026
+
+- **Long titles slide:** in the mini player, a title too long for its row slides to its end and back once, as it changes and as the screen shows again, its edges fading while it moves, then ends in "…" again. Not with Android's animations off, as under **Remove animations**.
+- **Sturdier:** a track whose title is its file name, as **Episode.mp3** on a share without tags, shows again: since 1.5 it showed nothing, not even its format or cover. A favourite playlist or album starts at its first track even when another controller queues something meanwhile. A change in Room settings no longer jumps back to the old value when a read that was already under way lands after it. A failed read of the speakers' list of music services waits a minute before it's tried again, so it can't hold up Play/Pause. Browsing one server while a track from another plays no longer leaves that track without its cover in the mini player and Now Playing. With shuffle on, a track tapped, or chosen with **Play now**, plays itself, not another of the queue's; shuffle stays on for the rest.
+- **Track numbers in albums:** an album shows each track's number before its title, in grey, such as **3. Festival**, in its list and in its tiles: the number the server has from the file's tags, so an album with tracks missing keeps its own numbering. An album on several discs adds the disc, as **2-3.**. Other lists show titles alone.
 
 ## 1.5 - November 2026
 

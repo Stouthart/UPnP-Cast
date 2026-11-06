@@ -49,8 +49,10 @@ class BrowseActivity : Activity() {
         const val ROOM_PLAYERS = "room_players"
     }
 
-    private class Level(val id: String, val title: String) {
+    /** One level of the server's tree; [album]: an album's own, whose tracks show their numbers. */
+    private class Level(val id: String, val title: String, val album: Boolean = false) {
         val items = ArrayList<Entry>()
+        var discs = false // An album with tracks on more than one disc: their numbers name the disc too.
         var total = -1 // Unknown until the first page.
         var error: String? = null
         var resume = 0 // Where paging stopped, at an error or when the screen did: it goes on from there.
@@ -108,7 +110,14 @@ class BrowseActivity : Activity() {
             }
             val h = v.tag as Holder
             val e = level.items[i]
-            h.name.text = e.title
+            // In an album, a track's number before its title, in grey, as a row and as a tile: the server's, from the
+            // files' tags, so an album with tracks missing keeps the numbers it has; the disc too when it has several.
+            h.name.text = if (level.album && !e.container && e.track > 0) {
+                val n = if (level.discs && e.disc > 0) "${e.disc}-${e.track}. " else "${e.track}. "
+                SpannableString(n + e.title).apply { setSpan(ForegroundColorSpan(getColor(R.color.text2)), 0, n.length, 0) }
+            } else {
+                e.title
+            }
             // A row greyed out above 48 kHz has its format in the warning colour, at full strength: why it can't play.
             val high = !tiles && !e.container && (e.res?.hz ?: 0) > MAX_HZ
             // A tile is too narrow for a track's artist and format as well: its length alone; a row has the room. A
@@ -214,6 +223,7 @@ class BrowseActivity : Activity() {
         list.setOnItemClickListener { _, _, n, _ -> click(level.items[n]) }
         player = Player(this).apply {
             hosts += server.host
+            hosts += Player.hosts(i) // The main screen's servers too: the track playing may be another server's.
             room = Player.room(i) // Where tracks play, following the speakers' grouping; null when no Sonos was found.
             onNetwork = { retry() }
         }
@@ -309,7 +319,7 @@ class BrowseActivity : Activity() {
     /** A container opens; a track plays with the rest of this level queued around it, as in an album; a favourite plays. */
     private fun click(e: Entry) {
         e.fav?.let { return if (e.playable) favorite(e, it) else toast(getString(R.string.shortcut, e.title)) }
-        if (e.container) return open(Level(e.id, e.title))
+        if (e.container) return open(Level(e.id, e.title, e.cls.startsWith("object.container.album")))
         val r = e.res ?: return
         if (!e.playable) return toast(getString(R.string.unsupported_rate, e.title, r.hz.toString()))
         val tracks = tracks()
@@ -501,6 +511,7 @@ class BrowseActivity : Activity() {
                     if (!l.alive) return@runOnUiThread
                     l.items += got
                     l.total = page.total
+                    if (l.album) l.discs = l.items.filter { !it.container && it.disc > 0 }.mapTo(HashSet()) { it.disc }.size > 1
                     if (l === level) {
                         adapter.notifyDataSetChanged()
                         summary()

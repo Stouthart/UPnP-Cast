@@ -67,6 +67,7 @@ class RoomActivity : Activity() {
     @Volatile
     private var gen = 0 // Drops a read that another room's, a close, or leaving, overtook; and skips its requests left.
     private var filling = false // The controls are set from a read: not a change to send.
+    private var edits = 0 // Changes made here, main thread only: a read from before one would show the old value.
     private var started = false // Once started: a start after a stop reads the open room again, in place.
     private val lan: () -> Unit = { if (room >= 0) open(room, again = true) } // WiFi came, went or changed.
 
@@ -223,6 +224,7 @@ class RoomActivity : Activity() {
             status.shown = true
         }
         val asked = if (r.sub) keys + subKeys else keys
+        val made = edits
         later(io) {
             if (g != gen) return@later // Overtaken while a change went out: not a request for it.
             val pool = Executors.newFixedThreadPool(READS_AT_ONCE)
@@ -236,7 +238,9 @@ class RoomActivity : Activity() {
             } finally {
                 pool.shutdownNow()
             }
-            runOnUiThread { if (g == gen) fill(r, got) }
+            // Not after a change made meanwhile: it could still hold the value from before. Only ever a read again:
+            // the controls show, and can change, only once the first read has filled them.
+            runOnUiThread { if (g == gen && made == edits) fill(r, got) }
         }
     }
 
@@ -365,6 +369,7 @@ class RoomActivity : Activity() {
         val r = rooms[i]
         val k = "$i:$key"
         val g = gen
+        edits++
         if (wanted.put(k, v) != null) return
         later(io) {
             val x = wanted.remove(k) ?: return@later

@@ -192,7 +192,7 @@ object Upnp {
 
     // Only what the rows and playback use: MinimServer honours the filter, which keeps genre and date off the wire.
     private const val FILTER = "dc:title,dc:creator,upnp:artist,upnp:album,upnp:class," +
-        "upnp:albumArtURI,upnp:albumArtURI@dlna:profileID," +
+        "upnp:albumArtURI,upnp:albumArtURI@dlna:profileID,upnp:originalTrackNumber,upnp:originalDiscNumber," +
         "res,res@protocolInfo,res@sampleFrequency,res@bitsPerSample,res@duration,@childCount"
 
     fun browse(s: Server, id: String, start: Int, count: Int) =

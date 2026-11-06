@@ -93,6 +93,8 @@ class Entry(
     val count: Int, // A container's children, or -1.
     val res: Res?,
     val fav: Favorite? = null,
+    val track: Int = 0, // Its number on its album, from the file's tags; 0 when the server sends none.
+    val disc: Int = 0, // Its disc's, for an album of several; 0 when none.
 ) {
     val playable get() = if (fav != null) fav.uri.isNotEmpty() else res != null && res.url.isNotEmpty() && res.hz <= MAX_HZ
     var meta = "" // The row's detail line, made with the page, off the main thread.
@@ -143,12 +145,17 @@ object Didl {
         var album = ""
         var art: String? = null
         var size = -1 // The size class of the cover kept so far.
+        var track = 0
+        var disc = 0
         var res: Res? = null
         var first: Res? = null
         while (p.next() != END_DOCUMENT) {
             val name = p.name
             if (p.eventType == END_TAG && (name == "item" || name == "container")) {
-                out += Entry(id, title, container, cls, artist.ifEmpty { creator }, album, art, count, res ?: first)
+                out += Entry(
+                    id, title, container, cls, artist.ifEmpty { creator }, album, art, count, res ?: first, track = track,
+                    disc = disc,
+                )
                 continue
             }
             if (p.eventType != START_TAG) continue
@@ -164,6 +171,8 @@ object Didl {
                     album = ""
                     art = null
                     size = -1
+                    track = 0
+                    disc = 0
                     res = null
                     first = null
                 }
@@ -174,6 +183,8 @@ object Didl {
                 "artist" -> if (artist.isEmpty() && p.getAttributeValue(null, "role") == null) artist = p.nextText()
                 "creator" -> creator = p.nextText()
                 "album" -> album = p.nextText()
+                "originalTrackNumber" -> track = p.nextText().trim().toIntOrNull()?.takeIf { it in 1..999 } ?: 0
+                "originalDiscNumber" -> disc = p.nextText().trim().toIntOrNull()?.takeIf { it in 1..99 } ?: 0
                 "albumArtURI" -> {
                     val k = coverSize(p.getAttributeValue(null, "profileID"))
                     val u = url(p.nextText().trim())

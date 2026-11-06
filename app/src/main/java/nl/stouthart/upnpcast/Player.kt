@@ -1,5 +1,9 @@
 package nl.stouthart.upnpcast
 
+import android.animation.Animator
+import android.animation.AnimatorListenerAdapter
+import android.animation.AnimatorSet
+import android.animation.ValueAnimator
 import android.annotation.SuppressLint
 import android.app.Activity
 import android.content.Intent
@@ -7,10 +11,13 @@ import android.content.res.ColorStateList
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
+import android.text.Layout
 import android.text.SpannableString
+import android.text.TextUtils
 import android.text.style.ForegroundColorSpan
 import android.view.KeyEvent
 import android.view.View
+import android.view.animation.LinearInterpolator
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.SeekBar
@@ -22,12 +29,16 @@ import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 
 private const val QUIET_MS = 1500L // After a change, polls leave that control alone until it has landed.
 private const val SLACK_MS = 250L // A position reply's trip, on top of the speaker rounding down to whole seconds.
 private const val SETTLE_MS = 4000L // How long a seek may take to land, while the speaker still reports 0 or the old place.
 private const val SEED_MS = 15_000L // How old what another screen showed may be for the next to start from it.
 private const val HOSTS = "hosts"
+private const val LIST_AGAIN_MS = 60_000L // After a failed read of the speakers' music services.
+private const val GLIDE_DP_S = 30f // The mini player's title slides at the speed of Android's own scrolling text.
+private const val GLIDE_WAIT_MS = 1200L // Before it slides, as Android's does; and a pause at its end, then back.
 
 /**
  * The room's track and controls: the mini player at the foot of a screen, or all of Now Playing when the layout has a
@@ -56,6 +67,9 @@ class Player(private val a: Activity) {
 
         fun hosts(i: Intent): Array<String> = i.getStringArrayExtra(HOSTS) ?: emptyArray()
 
+        /** Hands the cover [hosts] alone to the next screen's player, as the main screen's to Browse. */
+        fun hosts(i: Intent, hosts: Set<String>): Intent = i.putExtra(HOSTS, hosts.toTypedArray())
+
         // Once the room has had anything loaded (a track, playing or paused, or a source such as the TV), the mini
         // player shows on every screen and stays, for the rest of the session.
         @Volatile
@@ -63,7 +77,12 @@ class Player(private val a: Activity) {
 
         // The speakers' list of music services, read at most once a run unless it failed: kept in Prefs, and read again
         // only for a service it hadn't, as one added since.
-        private val listed = java.util.concurrent.atomic.AtomicBoolean()
+        private val listed = AtomicBoolean()
+
+        // After a failure, the uptime from which the list is asked for again: not at every poll, as each try may take
+        // the whole timeout, and the poll shares its thread with Play/Pause and the other controls.
+        @Volatile
+        private var listAgain = 0L
 
         /** The UPnP servers' names by address, as the main screen found them: Now Playing's source for their tracks. */
         val servers: MutableMap<String, String> = ConcurrentHashMap()
@@ -374,6 +393,7 @@ class Player(private val a: Activity) {
         place()
         if (covers.retry()) shown = "" // A cover dropped at stop() is asked for again by the first answer.
         fresh = true // Everything at once: while away, the volume or the grouping may have changed elsewhere.
+        glide() // The screen shows again: the title slides once more.
         live = true
         val s = Prefs.poll(a).toLong()
         exec = Executors.newSingleThreadScheduledExecutor().apply { scheduleWithFixedDelay(::poll, 0, s, TimeUnit.SECONDS) }
@@ -385,6 +405,7 @@ class Player(private val a: Activity) {
     }
 
     fun stop() {
+        sliding?.cancel()
         Lan.stop(lan)
         live = false
         gen++
@@ -432,6 +453,53 @@ class Player(private val a: Activity) {
     }
 
     fun destroy() = covers.stop()
+
+    private var sliding: Animator? = null // The mini player's title on its way, main thread only.
+
+    /**
+     * The mini player's title, when it's too long for its row: after a moment it slides to its end, waits, and slides
+     * back, its edges fading meanwhile; then it ends in "…" again. Once per title, and again as the screen shows. Not
+     * with Android's animations off, as by Remove animations, nor for right-to-left text.
+     */
+    private fun glide() {
+        sliding?.cancel()
+        if (full || !ValueAnimator.areAnimatorsEnabled()) return
+        title.post {
+            // Once laid out; not for a screen that stopped meanwhile, and only one at a time: a title set twice in a
+            // row, as the seeded one and then the room's, posts two.
+            if (!live) return@post
+            sliding?.cancel()
+            val room = title.width - title.totalPaddingLeft - title.totalPaddingRight
+            val dx = (title.paint.measureText(title.text, 0, title.text.length) - room).toInt()
+            if (room <= 0 || dx <= 0 || title.layout?.getParagraphDirection(0) != Layout.DIR_LEFT_TO_RIGHT) return@post
+            val ms = (dx * 1000 / (GLIDE_DP_S * a.resources.displayMetrics.density)).toLong()
+            val there = ValueAnimator.ofInt(0, dx).setDuration(ms).apply { startDelay = GLIDE_WAIT_MS }
+            val back = ValueAnimator.ofInt(dx, 0).setDuration(ms / 2).apply { startDelay = GLIDE_WAIT_MS }
+            for (v in listOf(there, back)) v.addUpdateListener {
+                // Its first frame: the whole title on one line, clipped at the edges, not "…". In code: Android turns
+                // a layout's scrollHorizontally off again for a view with maxLines.
+                if (title.ellipsize != null) {
+                    title.ellipsize = null
+                    title.setHorizontallyScrolling(true)
+                    title.isHorizontalFadingEdgeEnabled = true
+                }
+                title.scrollTo(it.animatedValue as Int, 0)
+            }
+            sliding = AnimatorSet().apply {
+                interpolator = LinearInterpolator()
+                playSequentially(there, back)
+                addListener(object : AnimatorListenerAdapter() {
+                    override fun onAnimationEnd(x: Animator) { // Also after a cancel.
+                        title.scrollTo(0, 0)
+                        title.isHorizontalFadingEdgeEnabled = false
+                        title.setHorizontallyScrolling(false)
+                        title.ellipsize = TextUtils.TruncateAt.END
+                    }
+                })
+                start()
+            }
+        }
+    }
 
     /** Asks the room everything now, e.g. right after a play command, rather than at the next tick. */
     fun refresh() = later {
@@ -540,8 +608,11 @@ class Player(private val a: Activity) {
             }
             // A music service's name for Now Playing, as Qobuz: from the speakers' own list, read for one not kept yet.
             if (source(p.uri) == Source.OTHER) serviceId(p.uri)?.let { id ->
-                if (Prefs.service(a, id) == null && listed.compareAndSet(false, true)) {
-                    runCatching { Sonos.services(r) }.onSuccess { Prefs.services(a, it) }.onFailure { listed.set(false) }
+                if (Prefs.service(a, id) == null && SystemClock.elapsedRealtime() >= listAgain && listed.compareAndSet(false, true)) {
+                    runCatching { Sonos.services(r) }.onSuccess { Prefs.services(a, it) }.onFailure {
+                        listAgain = SystemClock.elapsedRealtime() + LIST_AGAIN_MS
+                        listed.set(false)
+                    }
                 }
             }
             // With the slow values, whether the speakers were grouped anew, also by the Sonos app or Spotify; only then
@@ -684,7 +755,10 @@ class Player(private val a: Activity) {
         val now = "$name\n$detail\n$cover\n$quality"
         if (now != shown) {
             shown = now
-            title.text = name
+            if (title.text.toString() != name) {
+                title.text = name
+                glide() // Only a new title slides again.
+            }
             title.setTextColor(a.getColor(if (answer == null) R.color.warning else R.color.text)) // No WiFi, or no room.
             meta.text = SpannableString(detail).apply {
                 if (r.name.isNotEmpty()) setSpan(ForegroundColorSpan(a.getColor(R.color.accent_text)), 0, r.name.length, 0)
@@ -780,7 +854,11 @@ class Player(private val a: Activity) {
     fun cover(r: Room, ref: String, uri: String = ""): String? {
         if (ref.isEmpty()) return null
         val u = runCatching { URL(URL("http://${r.host}/"), ref) }.getOrNull() ?: return null
-        if (u.protocol == "http" && (u.host == r.host.substringBefore(':') || u.host in hosts)) return u.toString()
+        // A server's own: one this screen was told of, or any the main screen found since, as the track playing may be
+        // another server's than the one browsed.
+        if (u.protocol == "http" && (u.host == r.host.substringBefore(':') || u.host in hosts || u.host in servers)) {
+            return u.toString()
+        }
         return if (uri.isEmpty()) null else Sonos.copy(r.host, uri)
     }
 }

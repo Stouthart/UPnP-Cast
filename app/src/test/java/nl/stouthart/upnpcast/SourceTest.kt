@@ -40,6 +40,9 @@ class SourceTest {
         assertEquals(false, linkTitle("radio", link)) // Part of mp3radio, but not the file name.
         assertEquals(false, linkTitle("90s90s Trance", link))
         assertEquals(false, linkTitle("", "x-rincon-mp3radio://icecast.example/"))
+        // A file's title may be its name, as on a share without tags: that one stays.
+        assertEquals(false, linkTitle("Episode.mp3", "x-file-cifs://192.168.8.2/podcasts/Episode.mp3"))
+        assertEquals(false, linkTitle("01.flac", "http://192.168.8.2:9790/music/01.flac"))
     }
 
     /** A music service by its number in a link, and its name from the speakers' list, as a Beam Ultra lists them. */
