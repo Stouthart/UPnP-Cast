@@ -25,6 +25,9 @@ fun coverSize(profile: String?) = when (profile?.substringAfterLast('_')) {
 /** Sonos plays nothing above 48 kHz over UPnP. */
 const val MAX_HZ = 48000
 
+/** A sample rate as every screen shows it: "44.1 kHz", "96 kHz", "22.05 kHz", exact and without trailing zeros. */
+fun khz(hz: Int) = if (hz % 1000 == 0) "${hz / 1000} kHz" else "${hz / 1000.0} kHz"
+
 private val LOSSLESS = setOf("FLAC", "ALAC", "WAV", "LPCM", "AIFF")
 
 /** A track's audio as the server offers it; 0 where the server doesn't say. */
@@ -60,19 +63,14 @@ class Res(val url: String, val protocolInfo: String, val hz: Int, val bits: Int,
         val codec = codec()
         val rate = when {
             hz >= 1_000_000 -> "%.1f MHz".format(Locale.ROOT, hz / 1e6) // DSD.
-            hz % 1000 == 0 && hz > 0 -> "${hz / 1000} kHz"
-            hz > 0 -> "%.1f kHz".format(Locale.ROOT, hz / 1000.0)
+            hz > 0 -> khz(hz)
             else -> ""
         }
         return listOf(codec, quality, rate, if (bits > 0) "$bits-bit" else "").filter { it.isNotEmpty() }.joinToString(" ")
     }
 
-    /** "5:40" or "1:02:03" from UPnP's "H:MM:SS.fff". */
-    fun time(): String {
-        val p = duration.substringBefore('.').split(':').map { it.toIntOrNull() ?: return "" }
-        if (p.size != 3) return ""
-        return if (p[0] > 0) "%d:%02d:%02d".format(p[0], p[1], p[2]) else "%d:%02d".format(p[1], p[2])
-    }
+    /** "5:40" or "1:02:03" from UPnP's "H:MM:SS.fff"; nothing without a length. */
+    fun time() = seconds(duration).let { if (it > 0) clock(it) else "" }
 }
 
 /**

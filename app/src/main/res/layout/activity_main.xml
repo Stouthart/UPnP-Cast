@@ -19,8 +19,11 @@
         android:padding="16dp">
 
         <!-- Rooms: the checked ones play together. Its title row reaches into the card's padding, so Room settings ends
-             where the mini player's Play circle does, its whole 40dp to tap. -->
-        <LinearLayout style="@style/Card">
+             where the mini player's Play circle does, its whole 40dp to tap; the card leaves its padding unclipped, so
+             the button's touch feedback shows whole. -->
+        <LinearLayout
+            style="@style/Card"
+            android:clipToPadding="false">
 
             <LinearLayout
                 android:layout_width="match_parent"
@@ -58,7 +61,7 @@
                     android:layout_width="40dp"
                     android:layout_height="40dp"
                     android:layout_marginEnd="9dp"
-                    android:background="?android:attr/selectableItemBackgroundBorderless"
+                    android:background="@drawable/control"
                     android:contentDescription="@string/room_settings"
                     android:padding="8dp"
                     android:src="@drawable/ic_tune"
@@ -88,19 +91,24 @@
             android:id="@+id/favorites_card"
             style="@style/Card"
             android:layout_marginTop="16dp"
+            android:clipToOutline="true"
+            android:clipToPadding="false"
             android:visibility="gone">
 
-            <!-- As App settings' header: 48dp to tap, the -10dp margins keep the title where a card's title sits. -->
+            <!-- As App settings' header: the whole card to tap, its title and › where a card's sit. -->
             <LinearLayout
                 android:id="@+id/favorites_header"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="-10dp"
-                android:layout_marginBottom="-10dp"
+                android:layout_marginStart="-20dp"
+                android:layout_marginTop="-20dp"
+                android:layout_marginEnd="-20dp"
+                android:layout_marginBottom="-20dp"
                 android:background="?android:attr/selectableItemBackground"
                 android:gravity="center_vertical"
-                android:minHeight="48dp"
-                android:orientation="horizontal">
+                android:minHeight="68dp"
+                android:orientation="horizontal"
+                android:paddingHorizontal="20dp">
 
                 <TextView
                     style="@style/Title"
@@ -158,27 +166,33 @@
                 android:visibility="gone" />
         </LinearLayout>
 
-        <!-- Settings: the title row opens and closes the card; closed at first, then as it was left. The card leaves
-             its padding unclipped: the title row reaches 10dp into it, above and below, and its ripple shows whole. -->
+        <!-- Settings: the title row opens and closes the card; closed at first, then as it was left. The title row
+             reaches over the card's padding to its edges, so the card leaves its padding unclipped, and clips to its own
+             rounded outline: the ripple fills the card closed, its title band open, corners and all. -->
         <LinearLayout
             style="@style/Card"
             android:layout_marginTop="16dp"
             android:animateLayoutChanges="true"
+            android:clipToOutline="true"
             android:clipToPadding="false">
 
             <!-- No bar: it marks a title with a summary line, as on Rooms; Settings is a title alone. -->
-            <!-- 48dp to tap; the -10dp margins keep the title where it was (top and bottom apart: Android
-                 ignores a negative layout_marginVertical). -->
+            <!-- To tap, the whole card while closed, as a room's row is all of it: -20dp margins over the card's padding
+                 to its edges, with 20dp padding back, so the title and the chevron stay where they were, and 68dp, the
+                 closed card's height (each side apart: Android ignores a negative layout_marginVertical). -->
             <LinearLayout
                 android:id="@+id/settings_header"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="-10dp"
-                android:layout_marginBottom="-10dp"
+                android:layout_marginStart="-20dp"
+                android:layout_marginTop="-20dp"
+                android:layout_marginEnd="-20dp"
+                android:layout_marginBottom="-20dp"
                 android:background="?android:attr/selectableItemBackground"
                 android:gravity="center_vertical"
-                android:minHeight="48dp"
-                android:orientation="horizontal">
+                android:minHeight="68dp"
+                android:orientation="horizontal"
+                android:paddingHorizontal="20dp">
 
                 <TextView
                     style="@style/Title"
@@ -204,7 +218,8 @@
                 android:orientation="vertical"
                 android:visibility="gone">
 
-                <!-- What the app does with the rooms first, then its look. -->
+                <!-- What the app does with the rooms first, then its look. 28dp between settings, from what's drawn; the
+                     first, under the title, 20dp, and each name 10dp above its own control. -->
                 <TextView
                     style="@style/Label"
                     android:layout_marginTop="20dp"
@@ -248,14 +263,9 @@
                         android:textSize="15sp" />
                 </LinearLayout>
 
-                <Switch
-                    android:id="@+id/group"
-                    style="@style/Toggle"
-                    android:text="@string/group_rooms" />
-
                 <TextView
                     style="@style/Label"
-                    android:layout_marginTop="20dp"
+                    android:layout_marginTop="28dp"
                     android:text="@string/quick_skip" />
 
                 <!-- As Polling interval below; -12dp: this arrow is drawn 4dp into its box. -->
@@ -299,7 +309,7 @@
 
                 <TextView
                     style="@style/Label"
-                    android:layout_marginTop="20dp"
+                    android:layout_marginTop="28dp"
                     android:text="@string/polling" />
 
                 <!-- The mini player's volume row exactly: a 40dp icon slot, the slider, the value centred in 48dp.
@@ -345,7 +355,7 @@
 
                 <TextView
                     style="@style/Label"
-                    android:layout_marginTop="20dp"
+                    android:layout_marginTop="28dp"
                     android:text="@string/appearance" />
 
                 <LinearLayout

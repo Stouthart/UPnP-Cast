@@ -16,7 +16,6 @@ import android.widget.ScrollView
 import android.widget.SeekBar
 import android.widget.Switch
 import android.widget.TextView
-import android.widget.Toast
 import java.util.concurrent.Callable
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
@@ -94,6 +93,7 @@ class RoomActivity : Activity() {
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
+        uprightOnPhone()
         val ids = intent.getStringArrayExtra(IDS) ?: return finish()
         val names = intent.getStringArrayExtra(NAMES) ?: return finish()
         val hosts = intent.getStringArrayExtra(HOSTS) ?: return finish()
@@ -378,7 +378,7 @@ class RoomActivity : Activity() {
             } catch (e: Exception) {
                 val text = if (e is HttpException && e.upnp > 0) getString(R.string.setting_refused, r.name) else unreachable(r.name)
                 runOnUiThread {
-                    Toast.makeText(applicationContext, text, Toast.LENGTH_LONG).show()
+                    toast(text)
                     // Read again, so the controls show what the room has; not once closed or left, its start reads.
                     if (g == gen && room == i) open(i, again = true)
                 }

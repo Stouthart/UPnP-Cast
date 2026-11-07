@@ -1,0 +1,7 @@
+<!-- Touch feedback for every glyph button, as Android's own radio buttons and check boxes have it: a 40dp circle
+     around the glyph, whatever the size of its touch target. A borderless ripple without a radius takes its size from
+     its view, 68dp across for a 48dp one, and the row or card it sits in cuts that off. Buttons drawn as a circle,
+     Play, Previous and Next, fill their circle instead. -->
+<ripple xmlns:android="http://schemas.android.com/apk/res/android"
+    android:color="?android:attr/colorControlHighlight"
+    android:radius="20dp" />

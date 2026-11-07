@@ -1,5 +1,7 @@
 package nl.stouthart.upnpcast
 
+import org.xmlpull.v1.XmlPullParser
+import org.xmlpull.v1.XmlPullParserFactory
 import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.io.InputStream
@@ -43,8 +45,48 @@ object Http {
             "envelope/\" s:encodingStyle=\"http://schemas.xmlsoap.org/soap/encoding/\"><s:Body><u:$action xmlns:u=\"" +
             "$type\">$args</u:$action></s:Body></s:Envelope>"
         val headers = "Content-Type: text/xml; charset=\"utf-8\"\r\nSOAPACTION: \"$type#$action\"\r\n"
-        return send(URL(control), "POST", headers, body.toByteArray(), wait)
+        val reply = send(URL(control), "POST", headers, body.toByteArray(), wait)
+        if (!acknowledges(reply, action, service)) throw IOException("No $action response")
+        return reply
     }
+
+    /**
+     * Whether [reply] is [action]'s own answer: one complete SOAP document, its Envelope's Body holding that action's
+     * response alone, in [service]'s namespace at any version, or none, as a sloppy server may send it; no DTD. A web
+     * page, an empty or unfinished reply, a fault sent with 200, or the answer's tag in a comment or CDATA isn't taken
+     * as done, so no step that depends on it follows, as Play after SetAVTransportURI. Read whole: ~15 ms for the
+     * largest reply, a search of the whole library, which its caller reads again anyway.
+     */
+    fun acknowledges(reply: ByteArray, action: String, service: String? = null): Boolean = runCatching {
+        val p = XmlPullParserFactory.newInstance().apply { isNamespaceAware = true }.newPullParser()
+        p.setInput(reply.inputStream(), null)
+        val envelope = "http://schemas.xmlsoap.org/soap/envelope/"
+        val type = service?.let { "urn:schemas-upnp-org:service:$it:" }
+        var roots = 0
+        var body = false
+        var answer = false
+        while (p.nextToken() != XmlPullParser.END_DOCUMENT) {
+            val e = p.eventType
+            // No DTD, nor an entity only one could define.
+            require(e != XmlPullParser.DOCDECL && (e != XmlPullParser.ENTITY_REF || p.text != null))
+            // Around the Envelope only whitespace, comments and processing instructions.
+            require(p.depth != 0 || e !in XmlPullParser.TEXT..XmlPullParser.ENTITY_REF || e == XmlPullParser.TEXT && p.isWhitespace)
+            if (e != XmlPullParser.START_TAG) continue
+            when (p.depth) {
+                1 -> require(++roots == 1 && p.name == "Envelope" && p.namespace == envelope)
+                2 -> {
+                    require(!body) // A Header may come first; nothing after the Body.
+                    body = p.name == "Body" && p.namespace == envelope
+                }
+                3 -> if (body) {
+                    val ns = p.namespace
+                    require(!answer && p.name == "${action}Response" && (type == null || ns.isEmpty() || ns.startsWith(type)))
+                    answer = true
+                }
+            }
+        }
+        answer && p.depth == 0
+    }.getOrDefault(false)
 
     // Writes have no timeout of their own: at the deadline this closes the socket, which ends any I/O still on it.
     private val watchdog = ScheduledThreadPoolExecutor(1) { r -> Thread(r, "http-deadline").apply { isDaemon = true } }

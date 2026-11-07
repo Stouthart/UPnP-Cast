@@ -1,0 +1,55 @@
+package nl.stouthart.upnpcast
+
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+/** A reply counts as done only when it is the action's own answer, one whole SOAP document, not just any HTTP 200. */
+class SoapTest {
+    private val soap = "http://schemas.xmlsoap.org/soap/envelope/"
+    private val avt = "xmlns:u=\"urn:schemas-upnp-org:service:AVTransport:1\""
+
+    private fun envelope(body: String, before: String = "") = ("<?xml version=\"1.0\"?>$before<s:Envelope xmlns:s=\"$soap\" " +
+        "s:encodingStyle=\"http://schemas.xmlsoap.org/soap/encoding/\"><s:Body>$body</s:Body></s:Envelope>").toByteArray()
+
+    private fun ok(reply: ByteArray, action: String, service: String? = "AVTransport") =
+        assertTrue(String(reply), Http.acknowledges(reply, action, service))
+
+    private fun no(reply: ByteArray, action: String, service: String? = "AVTransport") =
+        assertFalse(String(reply), Http.acknowledges(reply, action, service))
+
+    @Test
+    fun ownAnswer() {
+        ok(envelope("<u:SetAVTransportURIResponse $avt></u:SetAVTransportURIResponse>"), "SetAVTransportURI")
+        ok(envelope("<u:PlayResponse $avt/>"), "Play")
+        // No prefix, a default namespace, as some servers answer; another version of the service; no namespace at all.
+        ok("<Envelope xmlns=\"$soap\"><Body><BrowseResponse xmlns=\"urn:schemas-upnp-org:service:ContentDirectory:1\"><Result>&lt;DIDL-Lite/&gt;</Result></BrowseResponse></Body></Envelope>".toByteArray(), "Browse", "ContentDirectory")
+        ok(envelope("<u:BrowseResponse xmlns:u=\"urn:schemas-upnp-org:service:ContentDirectory:2\"/>"), "Browse", "ContentDirectory")
+        ok(envelope("<PlayResponse/>"), "Play")
+        // Far into the reply: no cut-off.
+        ok(envelope("<u:PlayResponse $avt/>", " ".repeat(8192) + "<!-- ${"x".repeat(8192)} -->"), "Play")
+    }
+
+    @Test
+    fun notAnAnswer() {
+        no(envelope("<s:Fault><faultcode>s:Client</faultcode><faultstring>UPnPError</faultstring><detail>" +
+            "<UPnPError xmlns=\"urn:schemas-upnp-org:control-1-0\"><errorCode>714</errorCode></UPnPError></detail></s:Fault>"), "SetAVTransportURI")
+        no("<html><body>OK</body></html>".toByteArray(), "Play")
+        no(ByteArray(0), "Play")
+        no(envelope("<u:PlayResponse $avt></u:PlayResponse>"), "SetAVTransportURI") // Another action's.
+        no(envelope("<u:DisplayResponse $avt></u:DisplayResponse>"), "Play") // Only ends the same.
+        no(envelope("<u:PlayResponse xmlns:u=\"urn:schemas-upnp-org:service:RenderingControl:1\"/>"), "Play") // Another service's.
+    }
+
+    @Test
+    fun tagsThatDontCount() {
+        no(envelope("<!-- <u:PlayResponse $avt/> -->"), "Play")
+        no(envelope("<s:Fault><faultstring><![CDATA[<u:PlayResponse $avt/>]]></faultstring></s:Fault>"), "Play")
+        no(envelope("<s:Fault/><u:PlayResponse $avt/>"), "Play") // Not alone in the Body.
+        no(envelope("<u:PlayResponse $avt/>").copyOf(150), "Play") // Unfinished.
+        no(("<!-- <s:Envelope xmlns:s=\"$soap\"><s:Body><u:PlayResponse $avt/></s:Body></s:Envelope> -->").toByteArray(), "Play")
+        no(envelope("<u:PlayResponse $avt/>") + envelope("<u:PlayResponse $avt/>"), "Play") // Two documents.
+        no(envelope("<u:PlayResponse $avt/>", "<!DOCTYPE s:Envelope [<!ENTITY x \"y\">]>"), "Play") // A DTD.
+        no("text<s:Envelope xmlns:s=\"$soap\"><s:Body><u:PlayResponse $avt/></s:Body></s:Envelope>".toByteArray(), "Play")
+    }
+}

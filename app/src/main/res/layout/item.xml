@@ -1,9 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- A container or track: cover (or icon), title, detail line, and a chevron for containers. -->
+<!-- A container or track: cover (or icon), title, detail line, and a chevron for containers; in the Queue, ✕ instead.
+     Its padding unclipped, for the ✕'s feedback. -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:background="@drawable/panel"
+    android:clipToPadding="false"
+    android:foreground="@drawable/press"
     android:gravity="center_vertical"
     android:minHeight="72dp"
     android:orientation="horizontal"
@@ -30,7 +33,6 @@
             android:id="@+id/name"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:drawablePadding="6dp"
             android:ellipsize="end"
             android:fontFamily="sans-serif-medium"
             android:maxLines="1"
@@ -52,7 +54,7 @@
         android:id="@+id/more"
         android:layout_width="24dp"
         android:layout_height="40dp"
-        android:background="?android:attr/selectableItemBackgroundBorderless"
+        android:background="@drawable/control"
         android:contentDescription="@string/more"
         android:focusable="false"
         android:paddingVertical="8dp"
@@ -65,4 +67,19 @@
         android:layout_marginStart="8dp"
         android:importantForAccessibility="no"
         android:src="@drawable/ic_chevron" />
+
+    <!-- The Queue's: removes the track. Its glyph, drawn 5dp inside the 24dp box at the middle of its 48dp touch area,
+         ends 20dp inside the row, as a room row's last glyph; the area reaches 9dp into the row's padding. Not
+         focusable, so a tap anywhere else still plays the track. -->
+    <ImageView
+        android:id="@+id/remove"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
+        android:layout_marginEnd="-9dp"
+        android:background="@drawable/control"
+        android:contentDescription="@string/remove_track"
+        android:focusable="false"
+        android:padding="12dp"
+        android:src="@drawable/ic_close"
+        android:visibility="gone" />
 </LinearLayout>

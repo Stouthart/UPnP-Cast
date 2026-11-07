@@ -22,7 +22,6 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.SeekBar
 import android.widget.TextView
-import android.widget.Toast
 import java.net.URL
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ExecutorService
@@ -36,7 +35,7 @@ private const val SLACK_MS = 250L // A position reply's trip, on top of the spea
 private const val SETTLE_MS = 4000L // How long a seek may take to land, while the speaker still reports 0 or the old place.
 private const val SEED_MS = 15_000L // How old what another screen showed may be for the next to start from it.
 private const val HOSTS = "hosts"
-private const val LIST_AGAIN_MS = 60_000L // After a failed read of the speakers' music services.
+private const val META_AGAIN_MS = 60_000L // After a failed read of a station or of the speakers' music services.
 private const val GLIDE_DP_S = 30f // The mini player's title slides at the speed of Android's own scrolling text.
 private const val GLIDE_WAIT_MS = 1200L // Before it slides, as Android's does; and a pause at its end, then back.
 
@@ -150,7 +149,8 @@ class Player(private val a: Activity) {
     private var ticks = 0 // The poll thread's, like the two below.
     private var lastMeta: String? = null // TrackMetaData is parsed only when it differs from the last.
     private var lastTrack: Track? = null
-    private var stationFor = "" // The stream lastStation was read for: asked again only for another one.
+    private var stationFor = "" // The stream lastStation was last asked for: asked again for another one.
+    private var stationAgain = 0L // After a failure, when the same stream's station is asked again.
     private var lastStation: Station? = null
     @Volatile
     private var grouping: String? = null // The group as the coordinator last reported it; null: not asked yet.
@@ -523,10 +523,10 @@ class Player(private val a: Activity) {
             try {
                 work(r)
             } catch (e: Exception) {
-                // 701: the speaker answered that the source has no such action, as Pause on the TV input.
-                val text = if (e is HttpException && e.upnp == 701) a.getString(R.string.not_supported) else a.unreachable(r.name)
-                // The app's context: a message that lands after the screen closed doesn't keep the screen alive.
-                a.runOnUiThread { Toast.makeText(a.applicationContext, text, Toast.LENGTH_LONG).show() }
+                // The speaker answered, but refused, as Pause on the TV input (701): not a lost connection. That message
+                // is only for a speaker that didn't answer at all.
+                val text = if (e is HttpException && e.upnp > 0) a.getString(R.string.not_supported) else a.unreachable(r.name)
+                a.runOnUiThread { a.toast(text) }
             }
             fresh = true
             poll()
@@ -595,22 +595,25 @@ class Player(private val a: Activity) {
                 lastMeta = p.meta
             }
             // A radio stream's station, once per stream link (~10 ms): for Sonos Radio once per track, as each has its
-            // own. A failure is asked again at the next poll, and meanwhile shows no station, not the one before.
+            // own. After a failure it waits a minute, as the music services below; meanwhile no station shows, not the
+            // one before.
             if (source(p.uri).let { it != Source.RADIO && it != Source.SONOS_RADIO }) {
                 stationFor = ""
                 lastStation = null
-            } else if (p.uri != stationFor) {
+            } else if (p.uri != stationFor || lastStation == null && SystemClock.elapsedRealtime() >= stationAgain) {
                 lastStation = null
+                stationFor = p.uri
                 runCatching { Sonos.station(r) }.onSuccess {
                     lastStation = it
-                    stationFor = p.uri
+                }.onFailure {
+                    stationAgain = SystemClock.elapsedRealtime() + META_AGAIN_MS
                 }
             }
             // A music service's name for Now Playing, as Qobuz: from the speakers' own list, read for one not kept yet.
             if (source(p.uri) == Source.OTHER) serviceId(p.uri)?.let { id ->
                 if (Prefs.service(a, id) == null && SystemClock.elapsedRealtime() >= listAgain && listed.compareAndSet(false, true)) {
                     runCatching { Sonos.services(r) }.onSuccess { Prefs.services(a, it) }.onFailure {
-                        listAgain = SystemClock.elapsedRealtime() + LIST_AGAIN_MS
+                        listAgain = SystemClock.elapsedRealtime() + META_AGAIN_MS
                         listed.set(false)
                     }
                 }

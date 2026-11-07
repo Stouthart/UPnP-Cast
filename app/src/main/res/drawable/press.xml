@@ -1,0 +1,11 @@
+<!-- Touch feedback for what's tapped and drawn with the 16dp corners, such as a row, a tile or a choice: the theme's
+     highlight inside those corners, as a button's own fills its shape. -->
+<ripple xmlns:android="http://schemas.android.com/apk/res/android"
+    android:color="?android:attr/colorControlHighlight">
+    <item android:id="@android:id/mask">
+        <shape android:shape="rectangle">
+            <solid android:color="@android:color/white" />
+            <corners android:radius="16dp" />
+        </shape>
+    </item>
+</ripple>

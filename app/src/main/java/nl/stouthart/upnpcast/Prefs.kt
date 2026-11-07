@@ -10,7 +10,6 @@ object Prefs {
     private const val STEP = "step" // Volume per press of a volume button.
     private const val POLL = "poll" // Seconds between the player's questions to the room.
     private const val OPEN = "open" // The App settings card was left open.
-    private const val GROUP = "group" // A tap on a room groups the speakers.
     private const val SKIP = "skip" // Seconds per tap of a quick skip button, in steps of 5; 0: no such buttons.
 
     private const val DEVICES = "devices" // The main screen's file, beside the speakers' and servers' addresses.
@@ -52,11 +51,6 @@ object Prefs {
     fun open(c: Context) = prefs(c).getBoolean(OPEN, false)
 
     fun open(c: Context, o: Boolean) = prefs(c).edit().putBoolean(OPEN, o).apply()
-
-    // Off at first: grouping changes what plays in another room, for whoever is listening there.
-    fun group(c: Context) = prefs(c).getBoolean(GROUP, false)
-
-    fun group(c: Context, g: Boolean) = prefs(c).edit().putBoolean(GROUP, g).apply()
 
     // Off at first: Now Playing keeps its five controls until a step is chosen.
     fun skip(c: Context) = prefs(c).getInt(SKIP, 0).coerceIn(0, 60) / 5 * 5

@@ -48,7 +48,7 @@
     <string name="home">Home</string>
     <string name="grid_list">Grid/list</string>
     <string name="more">More</string>
-    <string name="unsupported_rate">Can\'t play %1$s. It\'s encoded at an unsupported sample rate %2$s Hz.</string>
+    <string name="unsupported_rate">Can\'t play %1$s. It\'s encoded at %2$s; Sonos plays up to %3$s.</string>
     <string name="cant_reach">Couldn\'t connect to %1$s.</string>
     <string name="not_supported">Not supported on this source</string>
     <string name="no_wifi">No WiFi connection</string>
@@ -80,9 +80,12 @@
     <string name="repeat">Repeat</string>
     <string name="queue">Queue</string>
     <string name="clear_queue">Clear queue</string>
+    <string name="current_track">Current track</string> <!-- TalkBack's word for the queue's playing row. -->
     <string name="clear_message">Are you sure you want to remove all tracks in the queue? The playback will stop.</string>
     <string name="clear_all">Clear all</string>
     <string name="clear_error">Unable to clear queue.</string>
+    <string name="remove_track">Remove from queue</string>
+    <string name="remove_error">Unable to remove track.</string>
     <string name="cancel">Cancel</string>
     <string name="close">Close</string>
     <string name="cant_play">Couldn\'t play %1$s.</string>
@@ -125,7 +128,7 @@
     <string name="setting_refused">%1$s didn\'t take that setting.</string>
     <string name="expanded">Expanded</string> <!-- The App settings card's state, and a room's in Room settings, for TalkBack. -->
     <string name="collapsed">Collapsed</string>
-    <string name="group_rooms">Group rooms</string> <!-- Sonos's "Group". -->
+    <string name="group_room">Group %1$s</string> <!-- A room's circle, for TalkBack: Sonos's "Group". -->
     <string name="group_title">Group %1$s?</string>
     <string name="group_message">%1$s is playing something else. It will stop that and play along with %2$s.</string>
     <string name="group">Group</string>

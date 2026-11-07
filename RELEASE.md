@@ -1,8 +1,22 @@
-<!-- 2.0 - Copyright (C) 2026 Stouthart. All rights reserved. -->
+<!-- 2.1 - Copyright (C) 2026 Stouthart. All rights reserved. -->
 
 # Release notes
 
-Highlights per version, newest first.
+Highlights per version, newest first, with 1.x condensed. 2.1 is the version distributed; the entries below it show how the app got there.
+
+## 2.1 - November 2026
+
+- **Group rooms on the Rooms card:** every room has its circle, as in the Sonos app: ✓ for the rooms that play together, ○ for the others. A tap on a room chooses the one the player controls, its name in blue; a tap on its circle groups or ungroups it. The **Group rooms** setting is gone. The ✓ is in the text's colour, so blue marks the chosen room alone.
+- **Previous as in most players:** once a track has played more than 5 seconds, Previous goes back to its start; within 5 seconds, to the track before; on the first track, to its start again. On a radio stream or the TV it stays the speaker's own. Next on the last track does nothing, where it said the room couldn't be reached.
+- **Clearer messages:** a room that answers but refuses, as Pause on the TV, says **Not supported on this source**; **Couldn't connect** is kept for a room that doesn't answer at all.
+- **Touch feedback that fits:** every icon button lights up in the same 40dp circle, whole, also where its row or card cut it off before, as a room's circle and a tile's **⋯**. Previous and Next fill their grey circle, as Play does. Rows, tiles and choices light up within their rounded corners, and the rows and tiles in Browse, Favorites and the Queue now light up at all.
+- **Bigger targets:** App settings and Favorites open with a tap anywhere on their card, as a room's row does; a room's circle takes a tap 48dp wide.
+- **Upright on a phone:** the screens no longer turn on a phone; on a tablet, from 600dp wide, they turn as before.
+- **More room between settings:** in App settings and Room settings, each setting stands as far from the next, switches included.
+- **The playing track in blue:** the Queue marks it by its colour alone, without the bars before it; TalkBack reads it as **Current track**.
+- **Remove a track from the queue:** a tap on the **✕** at a track's end removes it at once, as the Sonos app's swipe does. The track at that place is checked first, and the speaker removes it only if the queue hasn't changed since, as from another controller; otherwise the list is read again.
+- **Sample rates in kHz:** a track Sonos can't play says so as **Can't play Festival. It's encoded at 96 kHz; Sonos plays up to 48 kHz.**, where it gave the rate in Hz. A rate between whole kHz shows exactly, as `22.05 kHz`, where it was rounded to `22.1 kHz`.
+- **Sturdier:** a room's reply must be the answer to what was asked, one whole SOAP document: a web page, an empty or unfinished reply, another action's answer, or that answer's tag in a comment no longer counts as done, so what depends on it, such as Play after a new queue, isn't sent. A station's name that couldn't be read is asked again after a minute rather than at every poll, so it can't hold up the controls. A server shows as soon as it answers, its icon following, where a slow icon could hold it back up to 15 seconds.
 
 ## 2.0 - November 2026
 
@@ -10,70 +24,13 @@ Highlights per version, newest first.
 - **Sturdier:** a track whose title is its file name, as **Episode.mp3** on a share without tags, shows again: since 1.5 it showed nothing, not even its format or cover. A favourite playlist or album starts at its first track even when another controller queues something meanwhile. A change in Room settings no longer jumps back to the old value when a read that was already under way lands after it. A failed read of the speakers' list of music services waits a minute before it's tried again, so it can't hold up Play/Pause. Browsing one server while a track from another plays no longer leaves that track without its cover in the mini player and Now Playing. With shuffle on, a track tapped, or chosen with **Play now**, plays itself, not another of the queue's; shuffle stays on for the rest.
 - **Track numbers in albums:** an album shows each track's number before its title, in grey, such as **3. Festival**, in its list and in its tiles: the number the server has from the file's tags, so an album with tracks missing keeps its own numbering. An album on several discs adds the disc, as **2-3.**. Other lists show titles alone.
 
-## 1.5 - November 2026
+## 1.x - November 2026
 
-- **Favorites:** a new panel on the opening screen opens your Sonos system's favourites, such as radio stations and playlists, with their covers; a tap plays one in the chosen room. A station starts at once; a playlist or album replaces the queue. Shortcuts to a service's pages can't be played over UPnP, so they're greyed out.
-- **Radio as the Sonos app shows it:** a station now shows its name after the room, such as **Living Room · 90s90s Trance**, and its logo as the cover, the speaker's own copy, so the phone stays on the local network. Some stations showed a piece of their stream's link there instead, and no cover. The format line names the codec, such as `Radio · MP3`, where it showed `*`. **Sonos Radio** is named as such, with its station's picture: the speaker's copy of a track's cover could be another station's logo. After Play, the station's name stays while the speaker connects, where it showed `ZPSTR_CONNECTING` and `ZPSTR_BUFFERING`.
-- **Music services by name:** Now Playing names the service a track comes from, such as **Qobuz · MP3**, as the speakers name it in their own list of services, read once and kept. Before, a service other than Spotify showed the format alone. Spotify played from the Sonos app no longer shows `SPOTIFY` as its format: the speaker reports none for it, only for Spotify Connect.
-- **Even margins:** the mini player has as much room below its volume slider as above its cover. In App settings and Room settings a slider sits close under its name, and as far from what follows as any other row, also at a card's foot. Now Playing's text and bars line up with every other screen's content, its cover a little larger; the icon before a slider starts on its label's line, and Clear queue ends where the other screens' buttons do.
-- **Room settings opens smoothly:** a room's settings now slide open and closed under its row, as App settings does, then scroll into view.
-- **Calmer corners:** cards, rows, covers, buttons and choices share one corner, less round than before; the small covers and icons in rows keep theirs.
-- **Sharper covers:** from a server that offers a cover in several sizes, the largest, where Browse and Now Playing showed the thumbnail.
+The first release, then the Music library, group play, Room settings and Favorites.
 
-## 1.4 - November 2026
-
-- **Room settings:** the new icon at the top right of the Rooms card opens each room's own settings, as the Sonos app has them: Trueplay tuning; EQ, with Bass, Treble, Height level and Loudness; Volume limit; Sub audio with a bonded Sub, with Phase control while Trueplay is off; Home theater on a soundbar, with Speech Enhancement, Night Sound and TV dialog sync; and Hardware, with Status Light and Touch controls. One room is open at a time, its settings right under it, starting with the room the player controls; only what its speaker has shows, and a change applies at once. Back in the app, or once WiFi returns, they're read again, so a change made in the Sonos app shows.
-- **App settings:** the Settings card is now called App settings, next to the rooms' own; Group rooms is a switch.
-- **Quick skip,** as the Sonos app calls it: a new setting, off at first, from 5 to 60 seconds. When set, Now Playing has a button on each side of Play that skips back or forward that far from where the track is, also on Spotify; quick taps add up. Off, the controls stay as they were.
-- **The progress keeps moving:** back on Now Playing from another app, within the same track, the progress bar and its times now move on; now and then they stood still until the next track or a pause.
-- **Previous and Next in circles** on Now Playing, quiet grey ones, smaller than Play's; the controls are evenly spaced, with or without Quick skip.
-- **Colour that means something:** green for good news, such as the count of what was found (**2 rooms**, **12 items**), a lossless track's format on Now Playing, such as `FLAC 44.1 kHz 16-bit`, and a room Trueplay has tuned; orange for a problem, such as no WiFi, no Sonos system, a room or server that doesn't answer, and in Browse the format of a track above 48 kHz, why it's greyed out. Browse's buttons are grey, as Room settings' on the main screen; Scan for new content turns blue while it runs.
-- **Sliders whole:** the icon before a slider in App settings, such as Polling interval's, is no longer cut off at its left edge.
-- **Sturdier:** a cover far wider than tall is decoded at a smaller size and kept as the square that shows, so it can't take tens of MB; a server's list stops at 50,000 entries, however many it says it sent.
-
-## 1.3 - November 2026
-
-- **New colours:** white and light-grey surfaces with one clear blue in light mode, near-black greys in dark; the icon on dark grey, with a touch of that blue.
-- **Group rooms:** a new setting, off at first. When on, the Rooms card's checks work as check boxes: the checked rooms play together, in sync; checking a room adds it at their volume, after asking when it's playing something of its own, such as the TV; unchecking takes it out, and the others play on from where they were, also when it led them. When off, a tap chooses a room, as before, and its checks show the rooms grouped with it. Turning it off while rooms play together ends that: the leading room plays on, and the others go quiet.
-- **Group volume:** with rooms together, such as Kitchen + 1, the volume slider, mute and the volume buttons act on all of them: every speaker to the same level, rather than the Sonos app's shares.
-- **Grouped elsewhere:** when rooms are grouped or ungrouped outside the app, as in the Sonos app or by Spotify, every screen follows within a few seconds, Now Playing and the queue included, rather than staying on the group it opened with.
-- **Now Playing at once:** it opens with the cover, the title and the volume the mini player showed, the cover already sharp, rather than after a second or two; so do the other screens' mini players.
-- **A larger cover on taller screens:** Now Playing's controls and Queue stay at the bottom, and the cover takes the room above them.
-- **Tiles show a track's length:** a tile is too narrow for the artist and format as well; the list keeps them.
-- **Settings in view:** opening the Settings card scrolls all of it into view, its lower edge included.
-- **Source on Now Playing:** the format line starts with where the music comes from, as the Sonos app names it, such as `MinimServer · FLAC 96 kHz 24-bit`, `Spotify · Lossless 44.1 kHz 16-bit` or on the TV `HDMI · Dolby Atmos (MAT)`.
-- **Room icons:** each room shows the kind of its main speaker, from its model: soundbar, speaker, portable, Sub or Amp; and the model itself, as the Sonos app names it, such as Era 300, before the address. The app draws them, sharp at any size, so no picture is fetched; a room it hasn't read yet shows a speaker until it has. The Music library gets an icon of its own.
-
-## 1.2 - November 2026
-
-- **Music library:** the Sonos system's own library, the shared folders its speakers play from, next to the UPnP/DLNA servers, with the Sonos app's sections: Artists, Albums, Composers, Genres, Songs, Imported playlists and Folders. **Scan for new content** on its first level picks up new files, such as fresh podcast episodes.
-- **Play in Browse:** on an album, or any level with tracks, **▶** in the top card plays them all from the first, the same as a tap on the first track.
-- **Volume buttons:** while UPnP Cast is in front, the phone's volume buttons set the room's volume, by the new **Volume button step** setting, ±1 to ±10 (±2 by default).
-- **The TV's input format** on Now Playing, such as `Dolby Atmos (MAT)` or `PCM 2.0`.
-- **Long titles** in Browse's top card get a little smaller to fit their two lines before they're cut short.
-- **Sturdier:** the volume stays with its room, also when you switch rooms mid-change or leave the screen; a tap in the Queue checks the queue hasn't changed elsewhere first; requests stay on the WiFi and go to addresses only; long or endless lists can't keep the app paging; nothing loads for a screen you left; seeking works in any language; Now Playing fits a small window; and the sliders follow a keyboard and TalkBack.
-- **Settings fold away:** a tap on the title opens or closes them; closed at first, then as you left them. Inside, a new order: Volume button step, Polling interval, Appearance.
-- **Buttons and choices at one height.**
-
-## 1.1 - November 2026
-
-- **Android 14 and 15** as well, besides 16 and 17; untested on those versions so far.
-- **Home** in Browse goes back to the opening screen from any level, and servers show an arrow, as folders do.
-- **Spotify on the speaker:** Now Playing shows its cover, which the speaker fetches, and whether the stream is lossless.
-- **Sources without track details are named:** TV for the TV input, and Spotify for Spotify Connect while paused. A control the source doesn't offer, such as Pause on the TV, says "Not supported on this source".
-- **Now Playing's progress** counts evenly at any polling interval, and stays put while a seek lands. Previous, Next, Shuffle and Repeat are bigger, and the Queue button is calmer.
-- **The mini player appears with the first thing the room has loaded**, playing or paused, and then stays on every screen. Without WiFi or a Sonos room, it hides and Now Playing closes.
-- **New icon:** a gradient in the logo's blues, with a light-blue note on the cast screen.
-
-## 1.0 - November 2026
-
-The first release: a UPnP/DLNA music library on Sonos speakers, browsed and played from Android. The APK is attached to the release.
-
-- **Finds** the Sonos rooms and the UPnP/DLNA servers on the network by itself, in about half a second the first time and at once from then on, and again when the phone's WiFi comes back or changes.
-- **Stays on the WiFi:** without it, the screens say so and nothing goes over mobile data; with the home internet down, it still plays from the server.
-- **Browses** a server's own categories, as a list or as tiles, with covers and each track's format and length, such as `FLAC 44.1 kHz 16 bit · 5:40`.
-- **Plays on Sonos:** a tap plays a track with the rest of the list queued around it, and **⋯** offers Play now, Play next, Add to end of queue and Replace queue. The speaker fetches the music from the server itself.
-- **Mini player, Now Playing and Queue**, in the Sonos app's terms: Play/Pause, volume and mute on every screen; seek, Previous, Next, Shuffle and Repeat on Now Playing; the playing track marked in the queue, and Clear queue.
-- **Files up to 48 kHz**, Sonos's limit over UPnP: a track above it is greyed out, unless the server offers a version within it.
-- **Appearance** (System default, Light mode, Dark mode) and a **Polling interval** from 1 to 10 s.
-- **Small and quiet:** 157 KB, no libraries, nothing running in the background, and a start in about 140 ms.
+- **1.0** - A UPnP/DLNA music library on Sonos, browsed and played from Android. It finds the rooms and servers by itself and stays on the WiFi; Browse shows a server's own categories as a list or as tiles, with covers and each track's format; a tap plays a track with the rest of the list queued around it, and **⋯** offers Play now, Play next, Add to end of queue and Replace queue. The speaker fetches the music itself. A mini player, Now Playing and the Queue, in the Sonos app's terms; files up to 48 kHz, Sonos's limit over UPnP; Appearance and a Polling interval. 157 KB, no libraries, nothing running in the background.
+- **1.1** - Android 14 and 15 as well; **Home** in Browse; Spotify on the speaker with its cover and whether it's lossless; a source without track details named, as TV, and "Not supported on this source" for a control it doesn't offer; Now Playing's progress counting evenly; the mini player from the room's first item; a new icon.
+- **1.2** - The Sonos **Music library**, with **Scan for new content**; **▶** in Browse to play a level's tracks; the phone's volume buttons, by the new **Volume button step**; the TV's input format; settings that fold away; and sturdier requests: on the WiFi and to addresses only, with no endless paging, and sliders that follow a keyboard and TalkBack.
+- **1.3** - **Group rooms**, with one volume for the rooms together; every screen following grouping done elsewhere, as in the Sonos app; Now Playing at once, its cover larger on taller screens; the source on Now Playing, such as `MinimServer · FLAC 96 kHz 24-bit`; room icons by speaker kind, with the model; new colours.
+- **1.4** - **Room settings**, each room's own as in the Sonos app: Trueplay, EQ, Volume limit, Sub audio, Home theater and Hardware; **Quick skip**; Previous and Next in circles; colour that means something, green for good news and orange for problems; a progress bar that keeps moving; caps on a cover's size and a list's length.
+- **1.5** - **Favorites**, played in the chosen room; radio as the Sonos app shows it, with the station's name and logo; music services by name, such as **Qobuz**; even margins and calmer corners; Room settings sliding open; and the largest of a server's covers.

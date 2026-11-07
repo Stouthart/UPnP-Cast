@@ -5,7 +5,8 @@
     android:layout_height="wrap_content"
     android:layout_marginTop="12dp"
     android:background="@drawable/panel"
-    android:foreground="?android:attr/selectableItemBackground"
+    android:clipToPadding="false"
+    android:foreground="@drawable/press"
     android:gravity="center_vertical"
     android:minHeight="64dp"
     android:orientation="horizontal"
@@ -48,16 +49,22 @@
             android:textSize="14sp" />
     </LinearLayout>
 
-    <!-- Marks the room that tracks play in. -->
+    <!-- A room's circle: ✓ in the group the player controls, ○ not; a tap groups or ungroups it. Its glyph
+         where the 24dp box was, the 12dp around it a 48dp touch area of its own, reaching into the row's padding, so
+         the row keeps its height; its feedback a 40dp circle, whole inside the row, which leaves its padding unclipped. -->
     <ImageView
         android:id="@+id/check"
-        android:layout_width="24dp"
-        android:layout_height="24dp"
-        android:layout_marginStart="8dp"
-        android:layout_marginEnd="2dp"
-        android:importantForAccessibility="no"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
+        android:layout_marginStart="-4dp"
+        android:layout_marginTop="-4dp"
+        android:layout_marginEnd="-10dp"
+        android:layout_marginBottom="-4dp"
+        android:background="@drawable/control"
+        android:contentDescription="@string/group"
+        android:padding="12dp"
         android:src="@drawable/ic_check"
-        android:tint="@color/accent_text"
+        android:tint="@color/text"
         android:visibility="gone" />
 
     <!-- A server opens: the same chevron as a folder in Browse. The row's last glyph ends 20dp inside the row, as the

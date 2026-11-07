@@ -1,6 +1,8 @@
 <!-- Dark mode's Previous and Next circle: one step lighter than the panel grey, the cards' outline grey. Small, round
-     and holding a light icon, the panel grey looked darker than the Queue button's in the same tone. -->
-<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+     and holding a light icon, the panel grey looked darker than the Queue button's in the same tone. Its touch feedback
+     fills the circle, as Play's does. -->
+<ripple xmlns:android="http://schemas.android.com/apk/res/android"
+    android:color="?android:attr/colorControlHighlight">
     <item
         android:width="52dp"
         android:height="52dp"
@@ -9,4 +11,4 @@
             <solid android:color="@color/divider" />
         </shape>
     </item>
-</layer-list>
+</ripple>

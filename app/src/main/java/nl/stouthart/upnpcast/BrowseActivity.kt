@@ -18,7 +18,6 @@ import android.widget.GridView
 import android.widget.ImageView
 import android.widget.PopupMenu
 import android.widget.TextView
-import android.widget.Toast
 import android.window.OnBackInvokedCallback
 import android.window.OnBackInvokedDispatcher
 import java.util.concurrent.Executors
@@ -166,7 +165,8 @@ class BrowseActivity : Activity() {
         val pos = list.firstVisiblePosition
         if (t) {
             val gap = (GAP_DP * d).toInt()
-            val w = if (list.width > 0) list.width else resources.displayMetrics.widthPixels - (32 * d).toInt()
+            val w = if (list.width > 0) list.width - list.paddingLeft - list.paddingRight
+            else resources.displayMetrics.widthPixels - (32 * d).toInt()
             val cols = maxOf(2, Math.round(w / (TILE_DP * d)))
             val side = (w - (cols - 1) * gap) / cols - (20 * d).toInt() // Less the tile's own padding.
             if (tiles && cols == list.numColumns && side == cell) return // As after the first layout: nothing to redo.
@@ -192,6 +192,7 @@ class BrowseActivity : Activity() {
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
+        uprightOnPhone()
         val i = intent
         server = Server(
             "", i.getStringExtra(NAME) ?: "",
@@ -279,9 +280,6 @@ class BrowseActivity : Activity() {
         super.onDestroy()
     }
 
-    // The app's context: a message that lands after the screen closed doesn't keep the screen alive.
-    private fun toast(text: String) = Toast.makeText(applicationContext, text, Toast.LENGTH_LONG).show()
-
     /**
      * The Music library's Scan for new content, as in the Sonos app: one that already runs is followed, not restarted.
      * The speaker scans by itself; the screen follows it while it shows, and says when it's done.
@@ -321,7 +319,7 @@ class BrowseActivity : Activity() {
         e.fav?.let { return if (e.playable) favorite(e, it) else toast(getString(R.string.shortcut, e.title)) }
         if (e.container) return open(Level(e.id, e.title, e.cls.startsWith("object.container.album")))
         val r = e.res ?: return
-        if (!e.playable) return toast(getString(R.string.unsupported_rate, e.title, r.hz.toString()))
+        if (!e.playable) return toast(getString(R.string.unsupported_rate, e.title, khz(r.hz), khz(MAX_HZ)))
         val tracks = tracks()
         val k = tracks.indexOf(e)
         if (tracks.size <= MAX_QUEUE) send(tracks, How.REPLACE, k, e.title)

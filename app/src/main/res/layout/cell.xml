@@ -5,7 +5,9 @@
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:background="@drawable/panel"
+    android:foreground="@drawable/press"
     android:orientation="vertical"
+    android:outlineProvider="none"
     android:padding="10dp">
 
     <ImageView
@@ -45,13 +47,14 @@
             android:textSize="13sp" />
 
         <!-- Not focusable, so a tap anywhere else still selects the tile. The dots stop 10dp inside their box:
-             they end at the cover's edge. -->
+             they end at the cover's edge. Their circle of feedback reaches 8dp past the tile, so the tile has no
+             outline to cut it off (feedback is cut to it), and the list doesn't clip it. -->
         <ImageView
             android:id="@+id/more"
             android:layout_width="24dp"
             android:layout_height="24dp"
             android:layout_marginEnd="-10dp"
-            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:background="@drawable/control"
             android:contentDescription="@string/more"
             android:focusable="false"
             android:src="@drawable/ic_more" />

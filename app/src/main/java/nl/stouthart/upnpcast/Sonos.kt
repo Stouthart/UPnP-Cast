@@ -16,6 +16,15 @@ import kotlin.math.abs
 /** Where tracks go in the room's queue, in the Sonos app's terms. */
 enum class How { NOW, NEXT, END, REPLACE }
 
+/** Past this many seconds into a track, Previous goes back to its start, as in most players; 5, as Quick skip's steps. */
+private const val RESTART_S = 5
+
+/** Sonos's answer to a step past either end, as Previous on the first track or Next on the last: no track there. */
+private const val NO_TRACK = 711
+
+/** Sonos's answer to a queue change sent with a revision the queue has moved past: it changed meanwhile. */
+const val QUEUE_CHANGED = 1028
+
 enum class Repeat { OFF, ALL, ONE }
 
 /** What the room is playing, from its TrackMetaData; [art] may be relative to the speaker. */
@@ -270,12 +279,29 @@ object Sonos {
         if (s == "PLAYING" || s == "TRANSITIONING") avt(r, "Pause") else avt(r, "Play", "<Speed>1</Speed>")
     }
 
+    /** The next track; on the last one, with repeat off, there's none, and nothing happens. */
     fun next(r: Room) {
-        avt(r, "Next")
+        try {
+            avt(r, "Next")
+        } catch (e: HttpException) {
+            if (e.upnp != NO_TRACK) throw e
+        }
     }
 
+    /**
+     * Back to the track's start once it has played more than [RESTART_S] s, else the track before; on the first track,
+     * which has none, its start too. Only where the track has a length to seek in, as the progress bar: a radio stream,
+     * the TV or paused Spotify gets Previous as it is. The position is read right before, never trusted from a poll.
+     */
     fun previous(r: Room) {
-        avt(r, "Previous")
+        val p = position(r)
+        val seeks = p.duration > 0
+        if (seeks && p.elapsed > RESTART_S) return seek(r, 0)
+        try {
+            avt(r, "Previous")
+        } catch (e: HttpException) {
+            if (seeks && e.upnp == NO_TRACK) seek(r, 0) else throw e
+        }
     }
 
     fun seek(r: Room, s: Int) {
@@ -491,6 +517,16 @@ object Sonos {
         avt(r, "RemoveAllTracksFromQueue")
     }
 
+    /**
+     * Removes the track at queue position [n], from 1, only if the queue is still at revision [update], as read when
+     * that track was checked: the speaker refuses it once the queue changed meanwhile, so no other track goes. None, or
+     * 0, which would skip that check, isn't sent.
+     */
+    fun remove(r: Room, n: Int, update: Long?) {
+        if (update == null || update !in 1L..0xffff_ffffL) throw IOException("No queue revision")
+        avt(r, "RemoveTrackFromQueue", "<ObjectID>Q:0/$n</ObjectID><UpdateID>$update</UpdateID>")
+    }
+
     /** Starts the music library's Scan for new content on the player at [control]; it scans by itself. */
     fun scan(control: String) {
         // Empty: the library keeps its own album artist setting.
@@ -517,9 +553,8 @@ object Sonos {
         return out
     }
 
-    /** The queue's track at index [n] (0-based) as it is now: a tap on the Queue screen checks it still is the one. */
-    fun queueItem(r: Room, n: Int, url: (String) -> String?) =
-        Upnp.browse(contentDirectory(r), url, "Q:0", n, 1).entries.firstOrNull()
+    /** The queue at index [n] (0-based) as it is now, one track and the queue's revision: a queue action checks both. */
+    fun queueItem(r: Room, n: Int, url: (String) -> String?) = Upnp.browse(contentDirectory(r), url, "Q:0", n, 1)
 
     private fun contentDirectory(r: Room) = "http://${r.host}/MediaServer/ContentDirectory/Control"
 

@@ -8,11 +8,13 @@
     android:orientation="vertical">
 
     <!-- The title row reaches into the card's padding, as on the opening screen's Rooms card: its last glyph ends at
-         the card's content edge, where the mini player's Play circle and the list's › do. -->
+         the card's content edge, where the mini player's Play circle and the list's › do. The card leaves its padding
+         unclipped, so the buttons' touch feedback shows whole. -->
     <LinearLayout
         style="@style/Card"
         android:layout_marginHorizontal="16dp"
-        android:layout_marginTop="16dp">
+        android:layout_marginTop="16dp"
+        android:clipToPadding="false">
 
         <LinearLayout
             android:layout_width="match_parent"
@@ -51,7 +53,7 @@
                 android:id="@+id/play"
                 android:layout_width="40dp"
                 android:layout_height="40dp"
-                android:background="?android:attr/selectableItemBackgroundBorderless"
+                android:background="@drawable/control"
                 android:contentDescription="@string/play"
                 android:padding="8dp"
                 android:src="@drawable/ic_play"
@@ -63,7 +65,7 @@
                 android:id="@+id/scan"
                 android:layout_width="40dp"
                 android:layout_height="40dp"
-                android:background="?android:attr/selectableItemBackgroundBorderless"
+                android:background="@drawable/control"
                 android:contentDescription="@string/scan"
                 android:padding="8dp"
                 android:src="@drawable/ic_refresh"
@@ -74,7 +76,7 @@
                 android:id="@+id/home"
                 android:layout_width="40dp"
                 android:layout_height="40dp"
-                android:background="?android:attr/selectableItemBackgroundBorderless"
+                android:background="@drawable/control"
                 android:contentDescription="@string/home"
                 android:padding="8dp"
                 android:src="@drawable/ic_home" />
@@ -86,22 +88,26 @@
                 android:layout_width="40dp"
                 android:layout_height="40dp"
                 android:layout_marginEnd="9dp"
-                android:background="?android:attr/selectableItemBackgroundBorderless"
+                android:background="@drawable/control"
                 android:contentDescription="@string/grid_list"
                 android:padding="8dp"
                 android:src="@drawable/ic_grid" />
         </LinearLayout>
     </LinearLayout>
 
-    <!-- One column is the list; tiles get as many as the width holds, set in code. -->
+    <!-- One column is the list; tiles get as many as the width holds, set in code. Its 16dp sides are padding, and
+         it doesn't clip its tiles, so a tile's ⋮ shows its whole circle of feedback past the tile's edge. A row or tile
+         lights up itself; the list's own highlight would sit behind it. -->
     <GridView
         android:id="@+id/list"
         android:layout_width="match_parent"
         android:layout_height="0dp"
-        android:layout_marginHorizontal="16dp"
         android:layout_weight="1"
+        android:clipChildren="false"
         android:clipToPadding="false"
+        android:listSelector="@android:color/transparent"
         android:numColumns="1"
+        android:paddingHorizontal="16dp"
         android:paddingVertical="16dp"
         android:scrollbars="none"
         android:stretchMode="columnWidth"

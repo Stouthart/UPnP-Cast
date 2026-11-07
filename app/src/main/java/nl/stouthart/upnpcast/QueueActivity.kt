@@ -11,17 +11,17 @@ import android.widget.BaseAdapter
 import android.widget.ImageView
 import android.widget.ListView
 import android.widget.TextView
-import android.widget.Toast
 import java.util.concurrent.Executors
 
 private const val TAG = "UPnPCast"
 
-/** The room's queue: the playing track marked, a tap plays a track, and Clear queue empties it. */
+/** The room's queue: the playing track marked, a tap plays a track, ✕ removes one, and Clear queue empties it. */
 class QueueActivity : Activity() {
     private class Holder(v: View) {
         val art: ImageView = v.findViewById(R.id.art)
         val name: TextView = v.findViewById(R.id.name)
         val meta: TextView = v.findViewById(R.id.meta)
+        val remove: View = v.findViewById(R.id.remove)
     }
 
     private lateinit var player: Player // Its room is this one's, following the speakers' grouping.
@@ -30,7 +30,7 @@ class QueueActivity : Activity() {
     private lateinit var clear: View
     private lateinit var art: Art
     private val work = Executors.newSingleThreadExecutor() // Loads, in the order asked.
-    private val sonos = Executors.newSingleThreadExecutor() // Jump and Clear queue: never waiting behind a long load.
+    private val sonos = Executors.newSingleThreadExecutor() // Jump, ✕ and Clear queue: never behind a long load.
     private var items: List<Entry> = emptyList()
     private var current = -1 // The playing track's row, or -1 while the room plays something else.
     private var rows: Room? = null // The group whose queue the rows show, once loaded; null while none is.
@@ -47,24 +47,27 @@ class QueueActivity : Activity() {
             val v = convert ?: layoutInflater.inflate(R.layout.item, parent, false).apply {
                 tag = Holder(this)
                 findViewById<View>(R.id.chevron).visibility = View.GONE
-                findViewById<View>(R.id.more).visibility = View.GONE // The browse rows' menu; nothing to offer here yet.
+                findViewById<View>(R.id.more).visibility = View.GONE // Browse's menu: here ✕ instead.
+                findViewById<View>(R.id.remove).visibility = View.VISIBLE
             }
             val h = v.tag as Holder
             val e = items[i]
             h.name.text = e.title
-            // Bars as well as the colour: in light mode the accent navy is close to the text's near-black.
-            val now = i == current
-            h.name.setTextColor(getColor(if (now) R.color.accent_text else R.color.text))
-            h.name.setCompoundDrawablesRelativeWithIntrinsicBounds(if (now) R.drawable.ic_playing else 0, 0, 0, 0)
+            // The playing track by its colour alone: blue, set well apart from the text in both modes.
+            h.name.setTextColor(getColor(if (i == current) R.color.accent_text else R.color.text))
+            // And for TalkBack, which doesn't see colour; cleared on a row reused for another track.
+            v.stateDescription = if (i == current) getString(R.string.current_track) else null
             h.meta.text = e.meta
             h.meta.visibility = if (e.meta.isEmpty()) View.GONE else View.VISIBLE
             art.show(h.art, e.art, R.drawable.ic_music)
+            h.remove.setOnClickListener { remove(i) }
             return v
         }
     }
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
+        uprightOnPhone()
         val room = Player.room(intent) ?: return finish()
         setContentView(R.layout.activity_queue)
         list = findViewById(R.id.list)
@@ -125,9 +128,6 @@ class QueueActivity : Activity() {
         super.onDestroy()
     }
 
-    // The app's context: a message that lands after the screen closed doesn't keep the screen alive.
-    private fun toast(text: String) = Toast.makeText(applicationContext, text, Toast.LENGTH_LONG).show()
-
     private fun mark(i: Int) {
         if (i == current) return
         current = i
@@ -182,7 +182,7 @@ class QueueActivity : Activity() {
             try {
                 // A jump goes to a position, and the queue may have changed elsewhere since it was read: first the track
                 // there is checked to be this one; if it isn't, the list is read again instead (~15 ms).
-                val now = Sonos.queueItem(room, n) { player.cover(room, it) }
+                val now = Sonos.queueItem(room, n) { player.cover(room, it) }.entries.firstOrNull()
                 if (now == null || now.title != e.title || now.artist != e.artist || now.album != e.album) {
                     runOnUiThread { if (started) load() }
                     return@later
@@ -191,6 +191,46 @@ class QueueActivity : Activity() {
             } catch (x: Exception) {
                 Log.i(TAG, "Jump to ${n + 1} on ${room.name}: $x")
                 runOnUiThread { toast(getString(R.string.cant_play, e.title)) }
+            }
+            player.refresh()
+        }
+    }
+
+    /**
+     * Removes the row's track at once, as the Sonos app's swipe does: the row goes now, the speaker follows. As for a
+     * tap, the track at that place is checked first, as the queue may have changed elsewhere; if it's another, the list
+     * is read again instead. The delete carries the queue's revision from that check, so a change in between makes the
+     * speaker refuse it, rather than take another track. Several in a row line up behind each other, each checked
+     * against the queue as it is then. A list read still under way would bring the row back: it's dropped, and the list
+     * is read again once the speaker has confirmed.
+     */
+    private fun remove(n: Int) {
+        val room = player.room ?: return
+        val e = items.getOrNull(n) ?: return
+        gen++
+        items = items.toMutableList().apply { removeAt(n) }
+        if (n < current) current-- // The rows below move up; the playing one's place goes to the track after it.
+        summary(resources.getQuantityString(R.plurals.track_count, items.size, items.size), R.color.success)
+        clear.visibility = if (items.isEmpty()) View.GONE else View.VISIBLE
+        adapter.notifyDataSetChanged()
+        later(sonos) {
+            try {
+                val page = Sonos.queueItem(room, n) { player.cover(room, it) }
+                val now = page.entries.firstOrNull()
+                if (now == null || now.title != e.title || now.artist != e.artist || now.album != e.album) {
+                    runOnUiThread { if (started) load() }
+                    return@later
+                }
+                Sonos.remove(room, n + 1, page.update)
+                runOnUiThread { if (started) load() }
+            } catch (x: Exception) {
+                Log.i(TAG, "Remove ${n + 1} on ${room.name}: $x")
+                // Changed meanwhile: no failure, as when the check found another track; the list is read again.
+                val changed = x is HttpException && x.upnp == QUEUE_CHANGED
+                runOnUiThread {
+                    if (!changed) toast(getString(R.string.remove_error))
+                    if (started) load()
+                }
             }
             player.refresh()
         }

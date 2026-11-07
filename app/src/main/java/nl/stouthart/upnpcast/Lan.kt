@@ -9,11 +9,15 @@ import android.net.NetworkCapabilities
 import android.net.NetworkRequest
 import android.os.Handler
 import android.os.Looper
+import android.widget.Toast
 import java.net.InetAddress
 
 /** Why [name] didn't answer: the phone has no WiFi, or else the device itself. */
 fun Context.unreachable(name: String): String =
     if (Lan.wifi == null) getString(R.string.no_wifi) else getString(R.string.cant_reach, name)
+
+/** A message for a moment, on the app's context: one that lands after its screen closed doesn't keep that alive. */
+fun Context.toast(text: String) = Toast.makeText(applicationContext, text, Toast.LENGTH_LONG).show()
 
 /**
  * The phone's WiFi (or Ethernet, as on a docked tablet), where the speakers and servers are: watched while a screen

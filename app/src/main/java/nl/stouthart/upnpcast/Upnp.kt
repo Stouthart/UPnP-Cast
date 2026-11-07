@@ -187,8 +187,11 @@ object Upnp {
 
     fun esc(s: String) = s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;")
 
-    /** One page of a container's children; [total] tells whether more pages follow. */
-    class Page(val entries: List<Entry>, val returned: Int, val total: Int)
+    /**
+     * One page of a container's children; [total] tells whether more pages follow. [update] is the container's revision,
+     * as a Sonos queue counts its changes: a delete sent with it is refused once the queue changed since.
+     */
+    class Page(val entries: List<Entry>, val returned: Int, val total: Int, val update: Long? = null)
 
     // Only what the rows and playback use: MinimServer honours the filter, which keeps genre and date off the wire.
     private const val FILTER = "dc:title,dc:creator,upnp:artist,upnp:album,upnp:class," +
@@ -209,8 +212,8 @@ object Upnp {
             "<ObjectID>${esc(id)}</ObjectID><BrowseFlag>BrowseDirectChildren</BrowseFlag><Filter>$filter</Filter>" +
                 "<StartingIndex>$start</StartingIndex><RequestedCount>$count</RequestedCount><SortCriteria></SortCriteria>",
         )
-        val (result, returned, total) = args(reply, "Result", "NumberReturned", "TotalMatches")
-        return Page(parse(result ?: ""), returned?.toIntOrNull() ?: 0, total?.toIntOrNull() ?: 0)
+        val (result, returned, total, update) = args(reply, "Result", "NumberReturned", "TotalMatches", "UpdateID")
+        return Page(parse(result ?: ""), returned?.toIntOrNull() ?: 0, total?.toIntOrNull() ?: 0, update?.toLongOrNull())
     }
 
     /** A container's playable tracks over all its pages, up to [max]: what a menu on an album queues. */

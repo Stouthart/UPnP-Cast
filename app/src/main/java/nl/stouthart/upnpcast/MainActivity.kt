@@ -7,6 +7,7 @@ import android.app.Activity
 import android.app.AlertDialog
 import android.content.Intent
 import android.content.pm.PackageManager.PERMISSION_GRANTED
+import android.content.res.ColorStateList
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Rect
@@ -19,12 +20,12 @@ import android.util.Log
 import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup
+import android.view.accessibility.AccessibilityNodeInfo
+import android.widget.CheckBox
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.SeekBar
-import android.widget.Switch
 import android.widget.TextView
-import android.widget.Toast
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
@@ -68,6 +69,7 @@ class MainActivity : Activity() {
     @SuppressLint("InlinedApi") // ACCESS_LOCAL_NETWORK is Android 17's; before, lanAllowed() is true and it's never used.
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
+        uprightOnPhone()
         setContentView(R.layout.activity_main)
         roomsSummary = findViewById(R.id.rooms_summary)
         rooms = findViewById(R.id.rooms)
@@ -97,7 +99,10 @@ class MainActivity : Activity() {
         fold()
     }
 
-    /** The App settings card opens and closes with a tap on its title: closed at first, then as it was left. */
+    /**
+     * The App settings card opens and closes with a tap on its title row, the whole card while closed: closed at first,
+     * then as it was left.
+     */
     private fun fold() {
         val header: View = findViewById(R.id.settings_header)
         val body: View = findViewById(R.id.settings_body)
@@ -144,18 +149,10 @@ class MainActivity : Activity() {
         }
 
     /**
-     * The Volume button step (the next press uses it), Group rooms (the next tap on a room), Quick skip (Now Playing,
-     * the next time it opens), the Polling interval (applies at once) and Appearance (Android recreates the screens in
-     * the new mode).
+     * The Volume button step (the next press uses it), Quick skip (Now Playing, the next time it opens), the Polling
+     * interval (applies at once) and Appearance (Android recreates the screens in the new mode).
      */
     private fun settings() {
-        findViewById<Switch>(R.id.group).apply {
-            isChecked = Prefs.group(this@MainActivity)
-            setOnCheckedChangeListener { _, on ->
-                Prefs.group(this@MainActivity, on)
-                if (!on) single()
-            }
-        }
         val choices = arrayOf<TextView>(findViewById(R.id.appearance_system), findViewById(R.id.appearance_light), findViewById(R.id.appearance_dark))
         // When the mode stays the same, as System default while the system is in that mode, nothing recreates: the
         // choice is filled in place.
@@ -348,8 +345,12 @@ class MainActivity : Activity() {
                 remember(location, s != null)
                 if (s == null) return@task
                 val ms = SystemClock.elapsedRealtime() - t0
-                val bmp = s.icon?.let { runCatching { icon(Http.get(it)) }.getOrNull() }
-                runOnUiThread { if (g == gen) addServer(s, bmp, ms) }
+                // The row at once, usable without its icon, which can take up to the request's 15 s: its tile shows
+                // meanwhile, so the name doesn't move when the icon lands.
+                runOnUiThread { if (g == gen) addServer(s, null, ms, tile = s.icon != null) }
+                val url = s.icon ?: return@task
+                val bmp = runCatching { icon(Http.get(url)) }.getOrNull()
+                runOnUiThread { if (g == gen) serverIcon(s, bmp) }
             }
         }
 
@@ -391,7 +392,7 @@ class MainActivity : Activity() {
         place(t)
     }
 
-    /** Every room, the checked ones playing together; a tap groups them or only chooses, as Group rooms says. */
+    /** Every room: a tap on one chooses it for the player; a tap on its circle groups or ungroups it (see checks()). */
     private fun place(t: Upnp.Topology) {
         household = t
         found = t.rooms
@@ -399,7 +400,27 @@ class MainActivity : Activity() {
         // Each room by its main player's kind and model, known from the last start; a new room shows a speaker and its
         // address alone until read. The address is the room's own player's.
         for (x in t.rooms) rooms.addView(row(rooms, x.name, roomMeta(x, model(x)), glyph = productIcon(product(model(x)))).apply {
-            setOnClickListener { if (Prefs.group(this@MainActivity)) toggle(x) else choose(x) }
+            setOnClickListener { choose(x) }
+            findViewById<ImageView>(R.id.check).apply {
+                contentDescription = getString(R.string.group_room, x.name)
+                setOnClickListener { toggle(x) }
+                // A check box to TalkBack: "Group Kitchen, checkbox, checked".
+                accessibilityDelegate = object : View.AccessibilityDelegate() {
+                    override fun onInitializeAccessibilityNodeInfo(v: View, info: AccessibilityNodeInfo) {
+                        super.onInitializeAccessibilityNodeInfo(v, info)
+                        info.className = CheckBox::class.java.name
+                        info.isCheckable = true
+                        val on = x.id in checked
+                        // Android 16's three states; before it, the yes or no it replaced.
+                        if (Build.VERSION.SDK_INT >= 36) {
+                            info.checked = if (on) AccessibilityNodeInfo.CHECKED_STATE_TRUE else AccessibilityNodeInfo.CHECKED_STATE_FALSE
+                        } else {
+                            @Suppress("DEPRECATION")
+                            info.isChecked = on
+                        }
+                    }
+                }
+            }
         })
         pick(t)
         rooms.shown = true
@@ -420,10 +441,10 @@ class MainActivity : Activity() {
         checks()
     }
 
-    /** With Group rooms off: [x] for the player, with any rooms it plays with; the speakers stay grouped as they are. */
+    /** A tap on [x]'s row: it for the player, with any rooms it plays with; the speakers stay grouped as they are. */
     private fun choose(x: Room) {
         val t = household ?: return
-        if (settling || x.id in checked) return
+        if (settling || x.id == anchor()) return
         Prefs.room(this, x.id)
         pick(t)
     }
@@ -431,8 +452,8 @@ class MainActivity : Activity() {
     private var settling = false // A grouping change is out; taps wait for it.
 
     /**
-     * With Group rooms on: checks or unchecks [x], as a check box. A room that plays something of its own, as the TV
-     * or Spotify, is asked about first, as joining stops that; a tap on the wrong row shouldn't.
+     * A tap on [x]'s circle: ✓ leaves the group the player controls, ○ joins it. A room that plays something of its
+     * own, as the TV or Spotify, is asked about first, as joining stops that; a tap on the wrong circle shouldn't.
      */
     private fun toggle(x: Room) {
         if (x.id in checked) return regroup(x)
@@ -471,10 +492,12 @@ class MainActivity : Activity() {
         if (settling || (on && checked.size == 1)) return
         val next = if (on) checked - x.id else checked + x.id
         val leader = if (on && x.id == lead.id) t.rooms.first { it.id in next }.id else lead.id // Afterwards.
+        val mine = anchor()
         settling = true
         checked = next
+        // The player stays on the room it controls while that one stays in the group; else on the group's leader.
+        Prefs.room(this, mine?.takeIf { it in next } ?: leader)
         checks() // At once; the speakers' own report confirms it below.
-        Prefs.room(this, leader)
         val g = gen
         later(pool) {
             try {
@@ -490,34 +513,6 @@ class MainActivity : Activity() {
                 runOnUiThread { toast(unreachable(x.name)) }
             }
             settle(t, leader, next, g)
-        }
-    }
-
-    /**
-     * Group rooms turned off: the rooms playing with the leading one leave it and go quiet, and it plays on, the only
-     * one checked. A room alone stays as it is.
-     */
-    private fun single() {
-        val t = household ?: return
-        val lead = room ?: return
-        val others = t.rooms.filter { it.id in checked && it.id != lead.id }
-        if (settling || others.isEmpty()) return // A change still out: single() follows once it settled.
-        val next = setOf(lead.id)
-        settling = true
-        checked = next
-        checks()
-        Prefs.room(this, lead.id)
-        val g = gen
-        later(pool) {
-            for (x in others) {
-                try {
-                    Sonos.leave(x)
-                } catch (e: Exception) {
-                    Log.i(TAG, "Grouping ${x.name}: $e")
-                    runOnUiThread { toast(unreachable(x.name)) }
-                }
-            }
-            settle(t, lead.id, next, g)
         }
     }
 
@@ -542,14 +537,8 @@ class MainActivity : Activity() {
             settling = false
             if (g != gen) return@runOnUiThread
             (now ?: household)?.let { place(it) }
-            // Turned off while a change that left rooms together was out. Once only: single()'s own change leaves one,
-            // so a leave that failed isn't tried again and again.
-            if (next.size > 1 && !Prefs.group(this)) single()
         }
     }
-
-    // The app's context: a message that lands after the screen closed doesn't keep the screen alive.
-    private fun toast(text: String) = Toast.makeText(applicationContext, text, Toast.LENGTH_LONG).show()
 
     private fun model(r: Room) = Prefs.model(this, r.id)
 
@@ -575,24 +564,41 @@ class MainActivity : Activity() {
         }
     }
 
-    // The checked rooms' marks; "Selected" for TalkBack, as a check box would say.
+    /**
+     * Every room with its circle, as in the Sonos app's group sheet: ✓ in the group the player controls, in the text's
+     * colour, ○ not, in grey; and the room the player controls with its name in blue, as Room settings marks the open
+     * room, the only blue here: a blue ✓ read as that room too. TalkBack hears that room as "Selected". A single room has
+     * nothing to group, so no circle.
+     */
     private fun checks() {
+        val mine = anchor()
         for (i in found.indices) {
-            val on = found[i].id in checked
+            val x = found[i]
+            val on = x.id in checked
             rooms.getChildAt(i)?.apply { // None while a search has cleared the rows.
-                findViewById<View>(R.id.check).shown = on
-                isSelected = on
+                findViewById<TextView>(R.id.name).setTextColor(getColor(if (x.id == mine) R.color.accent_text else R.color.text))
+                findViewById<ImageView>(R.id.check).apply {
+                    shown = found.size > 1
+                    setImageResource(if (on) R.drawable.ic_check else R.drawable.ic_circle)
+                    imageTintList = ColorStateList.valueOf(getColor(if (on) R.color.text else R.color.text2))
+                }
+                isSelected = x.id == mine
             }
         }
     }
 
+    /** The room the player controls: the one chosen last while it's in the group, else the group's first. */
+    private fun anchor(): String? = Prefs.room(this)?.takeIf { it in checked } ?: found.firstOrNull { it.id in checked }?.id
+
     /** A server's row, or the Music library's, which says its shares in place of an address and stays last. */
-    private fun addServer(s: Server, bmp: Bitmap?, ms: Long, meta: String = s.host, glyph: Int = 0) {
+    private fun addServer(s: Server, bmp: Bitmap?, ms: Long, meta: String = s.host, glyph: Int = 0, tile: Boolean = false) {
         Log.i(TAG, "${s.name} in $ms ms")
         player.hosts += s.host // Its covers may show in the player.
         if (!s.library) Player.servers[s.host] = s.name // Now Playing's source for its tracks.
         val v = row(servers, s.name, meta, bmp, glyph).apply {
             findViewById<View>(R.id.chevron).shown = true
+            if (tile) findViewById<View>(R.id.icon).shown = true // Empty until serverIcon() fills it.
+            tag = s
             setOnClickListener { browse(s) }
         }
         if (s.library) {
@@ -604,6 +610,12 @@ class MainActivity : Activity() {
         servers.shown = true
         val n = servers.childCount
         serversLine(resources.getQuantityString(R.plurals.server_count, n, n), R.color.success)
+    }
+
+    /** [s]'s own icon into its row's tile, once it's in; when it couldn't be read, the tile goes. */
+    private fun serverIcon(s: Server, bmp: Bitmap?) {
+        val v = (0 until servers.childCount).map(servers::getChildAt).firstOrNull { it.tag === s } ?: return
+        v.findViewById<ImageView>(R.id.icon).apply { if (bmp != null) setImageBitmap(bmp) else shown = false }
     }
 
     /** Browse on [s], playing in the player's room. */

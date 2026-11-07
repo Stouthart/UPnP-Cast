@@ -5,6 +5,7 @@ import android.app.Activity
 import android.app.Activity.OVERRIDE_TRANSITION_CLOSE
 import android.app.Activity.OVERRIDE_TRANSITION_OPEN
 import android.content.Context
+import android.content.pm.ActivityInfo
 import android.graphics.Paint
 import android.util.TypedValue
 import android.view.GestureDetector
@@ -16,6 +17,16 @@ import android.widget.TextView
 import kotlin.math.abs
 
 private const val SWIPE_DP = 1000 // dp/s downwards that close a sheet: a flick, not a slow scroll.
+
+/**
+ * Upright on a phone, free to turn on a tablet, from 600dp of smallest width, as the Astra: decided here, as a fixed
+ * orientation in the manifest also holds on a tablet whose system doesn't set it aside, as REDMAGIC OS 11 does,
+ * though Android 16 should from 600dp. Once, at the start: the screens keep themselves through a turn.
+ */
+@SuppressLint("SourceLockedOrientationActivity") // On purpose: on a phone only.
+fun Activity.uprightOnPhone() {
+    if (resources.configuration.smallestScreenWidthDp < 600) requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+}
 
 /** The screens' controls and rows, shared by the main screen, Now Playing and Room settings. */
 var View.shown: Boolean
