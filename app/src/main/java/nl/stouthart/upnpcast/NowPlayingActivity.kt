@@ -19,6 +19,7 @@ class NowPlayingActivity : Activity() {
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
+        uprightOnPhone()
         val room = Player.room(intent) ?: return finish()
         setContentView(R.layout.activity_now_playing)
         sheet(findViewById(R.id.scroll), findViewById(R.id.close))

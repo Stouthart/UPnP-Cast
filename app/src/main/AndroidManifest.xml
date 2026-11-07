@@ -10,7 +10,8 @@
 
     <!-- configChanges: rotating or resizing keeps each screen as it is (no new search, no reload, the same place in
          a list); the layouts adapt by themselves, and the tile columns and the Now Playing cover follow in code.
-         enableOnBackInvokedCallback: Android 16 calls Browse's Back (up a level) by default; 14 and 15 only with it. -->
+         enableOnBackInvokedCallback: Android 16 calls Browse's Back (up a level) by default; 14 and 15 only with it.
+         No fixed orientation here: upright on a phone only, decided in code (uprightOnPhone). -->
     <application
         android:dataExtractionRules="@xml/backup_rules"
         android:enableOnBackInvokedCallback="true"

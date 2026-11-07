@@ -49,7 +49,7 @@
         <item name="android:layout_width">0dp</item>
         <item name="android:layout_height">56dp</item>
         <item name="android:layout_weight">1</item>
-        <item name="android:background">?android:attr/selectableItemBackgroundBorderless</item>
+        <item name="android:background">@drawable/control</item>
         <item name="android:padding">10dp</item>
         <item name="android:scaleType">fitCenter</item>
     </style>
@@ -59,7 +59,7 @@
         <item name="android:layout_width">0dp</item>
         <item name="android:layout_height">56dp</item>
         <item name="android:layout_weight">1</item>
-        <item name="android:background">?android:attr/selectableItemBackgroundBorderless</item>
+        <item name="android:background">@drawable/control</item>
         <item name="android:clickable">true</item>
         <item name="android:focusable">true</item>
         <item name="android:visibility">gone</item>
@@ -84,7 +84,7 @@
         <item name="android:layout_height">48dp</item> <!-- One height for segments and buttons, in both apps. -->
         <item name="android:layout_weight">1</item>
         <item name="android:background">@drawable/segment</item>
-        <item name="android:foreground">?android:attr/selectableItemBackground</item>
+        <item name="android:foreground">@drawable/press</item>
         <item name="android:gravity">center</item>
         <item name="android:maxLines">1</item>
         <item name="android:paddingHorizontal">6dp</item>
@@ -93,13 +93,14 @@
     </style>
 
     <!-- An on/off setting: a Switch's own text as the label, the app's track and thumb on the right, the row 48dp to tap.
-         Its margins put that text where a Label's would be, 20dp from what's above and below: the 48dp row has about
-         13dp around its 16sp text (as the App settings header's -10dp do for its title). -->
+         Its margins count from its 32dp track, as a slider row's from what it draws: the row reaches 8dp past the track
+         above and below, so 12dp puts the track 20dp below what's above, and -8dp counts the next view's margin, or the
+         card's padding, from the track's foot. Switches in a row are 52dp apart, their tap areas too. -->
     <style name="Toggle">
         <item name="android:layout_width">match_parent</item>
         <item name="android:layout_height">wrap_content</item>
-        <item name="android:layout_marginTop">7dp</item>
-        <item name="android:layout_marginBottom">-13dp</item>
+        <item name="android:layout_marginTop">12dp</item>
+        <item name="android:layout_marginBottom">-8dp</item>
         <item name="android:fontFamily">sans-serif-medium</item>
         <item name="android:minHeight">48dp</item>
         <item name="android:showText">false</item>

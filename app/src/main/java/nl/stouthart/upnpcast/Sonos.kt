@@ -16,6 +16,12 @@ import kotlin.math.abs
 /** Where tracks go in the room's queue, in the Sonos app's terms. */
 enum class How { NOW, NEXT, END, REPLACE }
 
+/** Past this many seconds into a track, Previous goes back to its start, as in most players; 5, as Quick skip's steps. */
+private const val RESTART_S = 5
+
+/** Sonos's answer to a step past either end, as Previous on the first track or Next on the last: no track there. */
+private const val NO_TRACK = 711
+
 enum class Repeat { OFF, ALL, ONE }
 
 /** What the room is playing, from its TrackMetaData; [art] may be relative to the speaker. */
@@ -270,12 +276,29 @@ object Sonos {
         if (s == "PLAYING" || s == "TRANSITIONING") avt(r, "Pause") else avt(r, "Play", "<Speed>1</Speed>")
     }
 
+    /** The next track; on the last one, with repeat off, there's none, and nothing happens. */
     fun next(r: Room) {
-        avt(r, "Next")
+        try {
+            avt(r, "Next")
+        } catch (e: HttpException) {
+            if (e.upnp != NO_TRACK) throw e
+        }
     }
 
+    /**
+     * Back to the track's start once it has played more than [RESTART_S] s, else the track before; on the first track,
+     * which has none, its start too. Only where the track has a length to seek in, as the progress bar: a radio stream,
+     * the TV or paused Spotify gets Previous as it is. The position is read right before, never trusted from a poll.
+     */
     fun previous(r: Room) {
-        avt(r, "Previous")
+        val p = position(r)
+        val seeks = p.duration > 0
+        if (seeks && p.elapsed > RESTART_S) return seek(r, 0)
+        try {
+            avt(r, "Previous")
+        } catch (e: HttpException) {
+            if (seeks && e.upnp == NO_TRACK) seek(r, 0) else throw e
+        }
     }
 
     fun seek(r: Room, s: Int) {

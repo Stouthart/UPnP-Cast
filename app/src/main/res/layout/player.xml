@@ -1,11 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- The room's track, Play/Pause and volume, at the foot of every screen. Hidden until there is a room. The Card's
-     20dp padding all round: from the cover at the top and the volume row at the foot, as from the sides. -->
+     20dp padding all round: from the cover at the top and the volume row at the foot, as from the sides. The speaker's
+     box reaches past its row into that padding, so neither is clipped: its touch feedback shows whole. -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/player"
     style="@style/Card"
     android:layout_marginHorizontal="16dp"
     android:layout_marginBottom="16dp"
+    android:clipChildren="false"
+    android:clipToPadding="false"
     android:visibility="gone">
 
     <LinearLayout
@@ -80,7 +83,7 @@
             android:layout_width="40dp"
             android:layout_height="40dp"
             android:layout_marginStart="-11dp"
-            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:background="@drawable/control"
             android:contentDescription="@string/mute"
             android:padding="8dp"
             android:src="@drawable/ic_volume" />

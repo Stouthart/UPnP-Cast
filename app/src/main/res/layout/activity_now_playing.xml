@@ -25,7 +25,7 @@
             android:layout_width="56dp"
             android:layout_height="40dp"
             android:layout_marginBottom="8dp"
-            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:background="@drawable/control"
             android:contentDescription="@string/close"
             android:scaleType="center"
             android:src="@drawable/ic_down" />
@@ -134,7 +134,6 @@
                 style="@style/Transport"
                 android:background="@drawable/circle_quiet"
                 android:contentDescription="@string/previous"
-                android:foreground="?android:attr/selectableItemBackgroundBorderless"
                 android:src="@drawable/ic_previous" />
 
             <!-- The arrow at 32dp, between Previous's 36 and Shuffle's 28; the step in its circle, a little below the
@@ -199,7 +198,6 @@
                 style="@style/Transport"
                 android:background="@drawable/circle_quiet"
                 android:contentDescription="@string/next"
-                android:foreground="?android:attr/selectableItemBackgroundBorderless"
                 android:src="@drawable/ic_next" />
 
             <ImageView
@@ -212,12 +210,14 @@
         </LinearLayout>
 
         <!-- 9dp above and -11dp below: the icon's box reaches 11dp past the speaker and the slider both ways, so the
-             row is 20dp from the controls and the Queue button, as the rows above are from each other. -->
+             row is 20dp from the controls and the Queue button, as the rows above are from each other. The speaker's
+             box reaches into the row's padding, left unclipped so its touch feedback shows whole. -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="9dp"
             android:layout_marginBottom="-11dp"
+            android:clipToPadding="false"
             android:gravity="center_vertical"
             android:orientation="horizontal"
             android:paddingHorizontal="16dp">
@@ -228,7 +228,7 @@
                 android:layout_width="40dp"
                 android:layout_height="40dp"
                 android:layout_marginStart="-11dp"
-                android:background="?android:attr/selectableItemBackgroundBorderless"
+                android:background="@drawable/control"
                 android:contentDescription="@string/mute"
                 android:padding="8dp"
                 android:src="@drawable/ic_volume" />

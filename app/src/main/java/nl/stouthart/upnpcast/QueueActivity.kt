@@ -11,7 +11,6 @@ import android.widget.BaseAdapter
 import android.widget.ImageView
 import android.widget.ListView
 import android.widget.TextView
-import android.widget.Toast
 import java.util.concurrent.Executors
 
 private const val TAG = "UPnPCast"
@@ -52,10 +51,10 @@ class QueueActivity : Activity() {
             val h = v.tag as Holder
             val e = items[i]
             h.name.text = e.title
-            // Bars as well as the colour: in light mode the accent navy is close to the text's near-black.
-            val now = i == current
-            h.name.setTextColor(getColor(if (now) R.color.accent_text else R.color.text))
-            h.name.setCompoundDrawablesRelativeWithIntrinsicBounds(if (now) R.drawable.ic_playing else 0, 0, 0, 0)
+            // The playing track by its colour alone: blue, set well apart from the text in both modes.
+            h.name.setTextColor(getColor(if (i == current) R.color.accent_text else R.color.text))
+            // And for TalkBack, which doesn't see colour; cleared on a row reused for another track.
+            v.stateDescription = if (i == current) getString(R.string.current_track) else null
             h.meta.text = e.meta
             h.meta.visibility = if (e.meta.isEmpty()) View.GONE else View.VISIBLE
             art.show(h.art, e.art, R.drawable.ic_music)
@@ -65,6 +64,7 @@ class QueueActivity : Activity() {
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
+        uprightOnPhone()
         val room = Player.room(intent) ?: return finish()
         setContentView(R.layout.activity_queue)
         list = findViewById(R.id.list)
@@ -126,7 +126,6 @@ class QueueActivity : Activity() {
     }
 
     // The app's context: a message that lands after the screen closed doesn't keep the screen alive.
-    private fun toast(text: String) = Toast.makeText(applicationContext, text, Toast.LENGTH_LONG).show()
 
     private fun mark(i: Int) {
         if (i == current) return

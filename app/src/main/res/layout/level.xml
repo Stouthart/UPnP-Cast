@@ -3,11 +3,12 @@
      icon slot, the slider, the value centred in 48dp. -11dp at the start: a glyph drawn 3dp into its box starts on the
      name's line; RoomActivity sets the Sub's, drawn 4dp in. The box reaches 11dp above and below the glyph and the
      slider, so -1dp at the top and -11dp at the foot count the margins from what shows: 10dp from the name, as segments
-     are, and 20dp to what follows, or to the card's edge. -->
+     are, and the next margin, or the card's edge, from the row's foot. 28dp above: settings 28dp apart; the first under a
+     card's title is set to 20dp where it's included. -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:layout_marginTop="20dp"
+    android:layout_marginTop="28dp"
     android:orientation="vertical">
 
     <TextView

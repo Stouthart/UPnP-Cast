@@ -25,7 +25,7 @@
             android:layout_width="56dp"
             android:layout_height="40dp"
             android:layout_gravity="center_horizontal"
-            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:background="@drawable/control"
             android:contentDescription="@string/close"
             android:scaleType="center"
             android:src="@drawable/ic_down" />
@@ -96,9 +96,13 @@
                     style="@style/Title"
                     android:text="@string/eq" />
 
+                <!-- The first under the title: 20dp, as the first setting in App settings. -->
                 <include
                     android:id="@+id/bass"
-                    layout="@layout/level" />
+                    layout="@layout/level"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="20dp" />
 
                 <include
                     android:id="@+id/treble"
@@ -153,7 +157,7 @@
                 <TextView
                     android:id="@+id/phase_label"
                     style="@style/Label"
-                    android:layout_marginTop="20dp"
+                    android:layout_marginTop="28dp"
                     android:text="@string/phase_control" />
 
                 <LinearLayout
@@ -185,10 +189,13 @@
                     style="@style/Title"
                     android:text="@string/home_theater" />
 
-                <!-- Off and the speaker's four levels, by name. -->
+                <!-- Off and the speaker's four levels, by name; the first under the title: 20dp. -->
                 <include
                     android:id="@+id/speech"
-                    layout="@layout/level" />
+                    layout="@layout/level"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="20dp" />
 
                 <Switch
                     android:id="@+id/night"
