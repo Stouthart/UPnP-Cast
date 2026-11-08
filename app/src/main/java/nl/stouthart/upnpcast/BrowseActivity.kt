@@ -27,7 +27,8 @@ private const val PAGE = 200 // The first page shows at once; the rest follow wh
 private const val MAX_ITEMS = 50_000 // A server that never stops paging can't fill memory.
 private const val MAX_PAGES = 1000 // Nor keep it going with a few entries a page.
 private const val MAX_QUEUE = 500 // Tracks per command: an album at once, and a long list in a window from the tap.
-private const val KEY_TILES = "tiles" // The list or tiles, for every server and level.
+private const val KEY_TILES = "tiles" // The list or tiles, for every server and level but an album: tiles at first.
+private const val KEY_ALBUM_TILES = "album_tiles" // An album's own, its tracks with their numbers: a list at first.
 private const val TILE_DP = 150 // The tile size aimed at, rounded to whole columns: 4 on the Astra, 3 on the S25.
 private const val GAP_DP = 12
 private const val SCAN_POLL_MS = 1000L // How often a scan is checked; the speaker answers in ~10 ms.
@@ -71,6 +72,7 @@ class BrowseActivity : Activity() {
         val meta: TextView = v.findViewById(R.id.meta)
         val chevron: View? = v.findViewById(R.id.chevron) // A list row's; tiles have none.
         val more: View = v.findViewById(R.id.more)
+        val remove: View? = v.findViewById(R.id.remove) // A list row's, for a favourite; tiles have none.
     }
 
     private lateinit var server: Server
@@ -95,6 +97,7 @@ class BrowseActivity : Activity() {
     private val level get() = stack.last()
     private val back = OnBackInvokedCallback { up() }
     private var backing = false // The callback is registered: there is a level to go up to.
+    private var edits = 0 // Favourites removed here, main thread only: a list read before one is dropped.
 
     private val adapter = object : BaseAdapter() {
         override fun getCount() = if (stack.isEmpty()) 0 else level.items.size // setAdapter asks before the first level.
@@ -141,6 +144,12 @@ class BrowseActivity : Activity() {
             // the header's Home does, 5dp further in: two columns, Home over ⋯ and Grid/List over ›.
             if (!tiles) (h.more.layoutParams as ViewGroup.MarginLayoutParams).marginEnd = if (e.container) inset else -outset
             h.more.setOnClickListener { menu(it, e) }
+            // A favourite's ✕, as a queued track's, in the list: a tile has no room for it.
+            h.remove?.let {
+                it.visibility = if (server.favorites) View.VISIBLE else View.GONE
+                it.contentDescription = getString(R.string.favorite_remove)
+                it.setOnClickListener { unfavorite(e) }
+            }
             (if (tiles) tileArt!! else art).show(h.art, e.art, if (e.container) R.drawable.ic_folder else R.drawable.ic_music)
             val dim = if (e.container || e.playable) 1f else 0.5f
             h.art.alpha = dim
@@ -208,13 +217,13 @@ class BrowseActivity : Activity() {
         scan = findViewById(R.id.scan)
         viewType = findViewById(R.id.view_type)
         art = Art((48 * resources.displayMetrics.density).toInt()) { url -> loaded(art, url) }
-        layout(prefs.getBoolean(KEY_TILES, false))
+        layout(prefs.getBoolean(KEY_TILES, true)) // The first level's: never an album.
         play.setOnClickListener { tracks().takeIf { it.isNotEmpty() }?.let { send(it.take(MAX_QUEUE), How.REPLACE, 0, level.title) } }
         scan.setOnClickListener { scan() }
         findViewById<View>(R.id.home).setOnClickListener { finish() } // The opening screen is right below.
         viewType.setOnClickListener {
             layout(!tiles)
-            prefs.edit().putBoolean(KEY_TILES, tiles).apply()
+            prefs.edit().putBoolean(tilesKey(level), tiles).apply()
         }
         list.addOnLayoutChangeListener { _, l, _, r, _, ol, _, or, _ ->
             if (tiles && r - l != or - ol) list.post { layout(true) } // Not inside the layout pass itself.
@@ -257,6 +266,7 @@ class BrowseActivity : Activity() {
         started = true
         player.start()
         retry() // WiFi may have come back while the screen was away.
+        refresh()
     }
 
     override fun onStop() {
@@ -357,13 +367,21 @@ class BrowseActivity : Activity() {
         }
     }
 
-    /** Plays favourite [f] in the room. */
-    private fun favorite(e: Entry, f: Favorite) = command(e.title) { Sonos.favorite(it, f) }
+    /** Plays favourite [f] in the room; its turn taken now, so a fill still going for an earlier tap stops. */
+    private fun favorite(e: Entry, f: Favorite) {
+        val turn = player.room?.let(Sonos::turn) ?: 0
+        command(e.title) { Sonos.favorite(it, f, turn) }
+    }
 
-    /** Sends one queue command to the room. */
-    private fun send(tracks: List<Entry>, how: How, start: Int, what: String) = command(what) { r ->
+    /** Sends one queue command to the room; a Play now or Replace queue takes its turn now, as favorite() does. */
+    private fun send(tracks: List<Entry>, how: How, start: Int, what: String) {
+        val turn = player.room?.takeIf { how == How.NOW || how == How.REPLACE }?.let(Sonos::turn) ?: 0
+        command(what) { r -> send(r, tracks, how, start, turn) }
+    }
+
+    private fun send(r: Room, tracks: List<Entry>, how: How, start: Int, turn: Int) {
         val t0 = SystemClock.elapsedRealtime()
-        Sonos.play(r, tracks, how, start)
+        Sonos.play(r, tracks, how, start, turn) { player.refresh() } // The player follows once the music starts.
         Log.i(TAG, "$how ${tracks.size} tracks on ${r.name} in ${SystemClock.elapsedRealtime() - t0} ms")
     }
 
@@ -373,6 +391,10 @@ class BrowseActivity : Activity() {
         later(sonos) {
             try {
                 work(r)
+                player.refresh()
+            } catch (x: PartlyQueued) {
+                Log.i(TAG, "$what on ${r.name}: $x")
+                runOnUiThread { toast(getString(R.string.queue_partly)) } // It plays: the queue holds part of the tracks.
                 player.refresh()
             } catch (x: HttpException) {
                 Log.i(TAG, "$what on ${r.name}: $x")
@@ -401,7 +423,15 @@ class BrowseActivity : Activity() {
         list.setSelectionFromTop(level.pos, level.top)
     }
 
+    /** Which list or tiles [l] shows: an album's own, else the one for everything else. */
+    private fun tilesKey(l: Level) = if (l.album) KEY_ALBUM_TILES else KEY_TILES
+
+    /** Whether [l] shows tiles: as last chosen there; at first an album's numbered tracks as a list, the rest as tiles. */
+    private fun tiles(l: Level) = prefs.getBoolean(tilesKey(l), !l.album)
+
     private fun show() {
+        val t = tiles(level)
+        if (t != tiles) layout(t) // Into an album or out of one; open() and up() set the place after.
         title.text = level.title
         summary()
         fit()
@@ -526,6 +556,65 @@ class BrowseActivity : Activity() {
                         l.paging = false
                     }
                     return@later
+                }
+            }
+        }
+    }
+
+    /**
+     * Removes the favourite [e] at once, as the queue's ✕ does: the row goes now, the speaker follows. A favourite keeps
+     * its id until removed, so nothing else can be taken instead; on a failure the list is read again.
+     */
+    private fun unfavorite(e: Entry) {
+        val l = level
+        if (!l.items.remove(e)) return
+        edits++
+        if (l.total > 0) l.total--
+        adapter.notifyDataSetChanged()
+        summary()
+        later(sonos) {
+            try {
+                Sonos.removeFavorite(server.control, e.id)
+            } catch (x: Exception) {
+                Log.i(TAG, "Remove favorite ${e.id}: $x")
+                runOnUiThread {
+                    toast(getString(R.string.unfavorite_error))
+                    if (!l.alive || l.paging) return@runOnUiThread
+                    l.items.clear()
+                    l.total = -1
+                    l.done = false
+                    l.error = null
+                    if (l === level) {
+                        adapter.notifyDataSetChanged()
+                        summary()
+                    }
+                    load(l)
+                }
+            }
+        }
+    }
+
+    /**
+     * The favourites read again as the screen shows again, as the opening screen does: one may have been saved or
+     * removed meanwhile, as with Now Playing's heart or in the Sonos app. The rows stay until the new list is in, and a
+     * read that fails leaves them. Behind any ✕ on its way, and dropped after a ✕ tapped meanwhile, so it can't bring a
+     * removed row back.
+     */
+    private fun refresh() {
+        val l = level
+        if (!server.favorites || !l.done || l.paging || l.error != null) return
+        val g = edits
+        later(sonos) {
+            val all = runCatching { Sonos.favorites(server) }.getOrNull() ?: return@later
+            for (e in all) e.meta = meta(resources, e)
+            runOnUiThread {
+                if (g != edits || !l.alive || l.paging) return@runOnUiThread
+                l.items.clear()
+                l.items += all
+                l.total = all.size
+                if (l === level) {
+                    adapter.notifyDataSetChanged()
+                    summary()
                 }
             }
         }

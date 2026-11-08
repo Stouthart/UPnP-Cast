@@ -1,12 +1,12 @@
-<!-- 2.1 - Copyright (C) 2026 Stouthart. All rights reserved. -->
+<!-- 2.2 - Copyright (C) 2026 Stouthart. All rights reserved. -->
 
 # Play a UPnP music library on Sonos
 
-A small Android app that browses a **UPnP/DLNA** media server, such as **MinimServer**, and plays its music on **Sonos** speakers, with the queue, the volume and Now Playing at hand. The Sonos system's own **Music library**, the shared folders its speakers play from, is there too. The Sonos app can't play from a UPnP server. UPnP Cast hands the server's own links to the speaker, which then fetches the music itself: the phone isn't in the audio path, so playback goes on when the phone sleeps. No cloud, no ads, no account, no background service, and nothing beyond Android itself: the app is 251 KB.
+A small Android app that browses a **UPnP/DLNA** media server, such as **MinimServer**, and plays its music on **Sonos** speakers, with the queue, the volume and Now Playing at hand. The Sonos system's own **Music library**, the shared folders its speakers play from, is there too. The Sonos app can't play from a UPnP server. UPnP Cast hands the server's own links to the speaker, which then fetches the music itself: the phone isn't in the audio path, so playback goes on when the phone sleeps. No cloud, no ads, no account, no background service, and nothing beyond Android itself: the app is 258 KB.
 
-<p align="center"><img src="docs/screenshot-astra-home.png" width="240" alt="UPnP Cast on a RedMagic Astra: the Kitchen and the Living Room with their circles, Favorites, FireStream, MinimServer and the Music library, with music playing in the Living Room"> <img src="docs/screenshot-astra-room.png" width="240" alt="Room settings in UPnP Cast on a RedMagic Astra: the Living Room open, tuned by Trueplay, with its EQ and Volume limit"> <img src="docs/screenshot-astra-minimserver.png" width="240" alt="UPnP Cast browsing MinimServer on a RedMagic Astra: its 12 top-level views as a grid of covers, with the mini player below"></p>
+<p align="center"><img src="docs/screenshot-astra-home.png" width="240" alt="UPnP Cast on a RedMagic Astra: the Kitchen and the Living Room with their circles, Favorites, MinimServer and the Music library, with music playing in the Living Room"> <img src="docs/screenshot-astra-minimserver.png" width="240" alt="UPnP Cast browsing MinimServer on a RedMagic Astra: its 12 top-level views as a grid of covers, with the mini player below"> <img src="docs/screenshot-astra-now-playing.png" width="240" alt="Now Playing in UPnP Cast on a RedMagic Astra: La langue de barbarie by African Jazz Roots from MinimServer in FLAC 44.1 kHz 16-bit, with the Queue, the Living Room and the heart at the foot"></p>
 
-This is **version 2.1**. The [release notes](RELEASE.md) list what each version changed.
+This is **version 2.2**. The [release notes](RELEASE.md) list what each version changed.
 
 ## What it does
 
@@ -15,7 +15,7 @@ This is **version 2.1**. The [release notes](RELEASE.md) list what each version 
 | Opening screen | The Sonos rooms, each with an icon for its kind of speaker and its model, such as Era 300, Favorites, the UPnP/DLNA servers on the network and the Sonos Music library, and the settings |
 | Browse         | A server's own categories, as a list or as tiles, with covers and each track's format, such as `FLAC 44.1 kHz 16-bit`, and in tiles just its length; in an album each track's number before its title |
 | Mini player    | At the foot of every screen, from the first time the room has anything loaded; not without WiFi or a Sonos room: the cover, the title, the room and artist, Play/Pause, volume and mute; a title too long for its row slides to its end and back once |
-| Now Playing    | A large cover, the source and the format, such as `MinimServer · FLAC 96 kHz 24-bit`, `Qobuz · MP3` or on the TV `HDMI · Dolby Atmos (MAT)`, the format in green when it's lossless, a progress bar to seek, Shuffle, Previous, Play/Pause, Next, Repeat, Quick skip if set, volume and mute |
+| Now Playing    | A large cover, the source and the format, such as `MinimServer · FLAC 96 kHz 24-bit`, `Qobuz · MP3` or on the TV `HDMI · Dolby Atmos (MAT)`, the format in green when it's lossless, a progress bar to seek, Shuffle, Previous, Play/Pause, Next, Repeat, Quick skip if set, volume and mute; at the foot the Queue, the room and a heart to save what plays as a favourite, filled while it is one |
 | Queue          | The room's queue with the playing track in blue; a tap plays a track, ✕ removes one, and Clear queue empties it      |
 | Room settings  | From the icon on the Rooms card: each room's own settings, as in the Sonos app: Trueplay, EQ, Volume limit, Sub audio, Home theater and Hardware |
 
@@ -31,10 +31,10 @@ Developed and tested on a **Samsung Galaxy S25 Edge** (One UI 9, Android 17) and
 
 ## Installation
 
-Download `UPnP-Cast-2.1.apk` from the [latest release] and open it on the phone; Android asks to allow installing apps from that source first. Or install it from a computer with the phone connected over USB or wireless debugging:
+Download `UPnP-Cast-2.2.apk` from the [latest release] and open it on the phone; Android asks to allow installing apps from that source first. Or install it from a computer with the phone connected over USB or wireless debugging:
 
 ```bash
-adb install UPnP-Cast-2.1.apk
+adb install UPnP-Cast-2.2.apk
 ```
 
 ### Building it yourself
@@ -47,7 +47,7 @@ echo "sdk.dir=$ANDROID_HOME" >local.properties   # the SDK's location
 adb install app/build.nosync/outputs/apk/release/app-release.apk
 ```
 
-`./gradlew test` runs the unit tests of the address and subnet checks, whether a reply is the answer to what was asked, the seek format, the cover's size on Now Playing and which of a server's covers it takes, the room icons, the source, the track format and whether it's lossless, a stream's link as its title and the speaker's connecting state, a music service's number and name, Room settings' values and the Sub check, on the computer.
+`./gradlew test` runs the unit tests of the address and subnet checks, whether a reply is the answer to what was asked, the seek format, the cover's size on Now Playing and which of a server's covers it takes, the room icons, the source, the track format and whether it's lossless, a stream's link as its title and the speaker's connecting state, a music service's number and name, a favourite as the speaker saves it, a queue read whole from one revision, a track's format and cover however its metadata is spelt, Room settings' values and the Sub check, on the computer.
 
 Your build is signed with your own debug key, the release APK with mine. Android won't update one with the other, so uninstall the downloaded app before installing your own build.
 
@@ -60,19 +60,19 @@ Your build is signed with your own debug key, the release APK with mine. Android
 
 ## Usage
 
-- **Browse:** tap a server. Its categories appear as the server names them. The button at the right of the top card switches between a list and tiles, the house beside it goes back to the opening screen, and Back goes up a level. A long title in the top card gets a little smaller to fit its two lines before it's cut short.
-- **Play:** tap a track. It plays in the room with the rest of the list queued around it, as in an album; this replaces the room's queue. On a level with tracks, such as an album, **▶** in the top card plays them all from the first, the same as a tap on the first track. The **⋯** on a track or an album offers **Play now**, **Play next**, **Add to end of queue** and **Replace queue**.
-- **Favorites:** the favourites your Sonos system keeps, saved in the Sonos app or elsewhere, such as a radio station or a playlist. A tap on the Favorites panel opens them in Browse, as a list or as tiles; a tap on one plays it in the chosen room: a station starts, a playlist or album replaces the queue. A shortcut, to a page of a service such as Sonos Radio's, can't be played over UPnP, so it's greyed out. The panel shows while there's a favourite to play; they're read again each time the opening screen shows.
+- **Browse:** tap a server. Its categories appear as the server names them. The button at the right of the top card switches between a list and tiles, the house beside it goes back to the opening screen, and Back goes up a level. Albums remember their own choice, a list at first; everything else shares one, tiles at first. A long title in the top card gets a little smaller to fit its two lines before it's cut short.
+- **Play:** tap a track. It plays in the room with the rest of the list queued around it, as in an album; this replaces the room's queue. The music starts as soon as that track is in the queue, and the rest go in while it plays; another tap meanwhile plays at once. On a level with tracks, such as an album, **▶** in the top card plays them all from the first, the same as a tap on the first track. The **⋯** on a track or an album offers **Play now**, **Play next**, **Add to end of queue** and **Replace queue**.
+- **Favorites:** the favourites your Sonos system keeps, saved in the Sonos app or elsewhere, such as a radio station or a playlist. A tap on the Favorites panel opens them in Browse, as a list or as tiles; a tap on one plays it in the chosen room: a station starts, a playlist or album replaces the queue. A shortcut, to a page of a service such as Sonos Radio's, can't be played over UPnP, so it's greyed out. In the list, the **✕** at a favourite's end removes it at once. The panel shows while there's a favourite to play; they're read again each time the opening screen or Favorites shows, so one saved or removed meanwhile, on Now Playing or in the Sonos app, is there.
 - **Music library:** the sections are the Sonos app's: **Artists**, **Albums**, **Composers**, **Genres**, **Songs**, **Imported playlists** and **Folders**. The refresh icon on its first level is the Sonos app's **Scan for new content**: the speaker scans the shared folders, and the icon turns blue and the top card says so until it's done.
 - **Mini player:** tap it for Now Playing. The speaker icon mutes and unmutes. With more than one room checked, the player shows them as one, such as **Kitchen + 1**, and its controls act on all of them: the volume sets every speaker to the same level, unlike the Sonos app, which moves them all by the same share. When rooms are grouped or ungrouped elsewhere, as in the Sonos app or by playing Spotify on one of them, every screen follows within a few seconds.
 - **Volume buttons:** while UPnP Cast is in front and the mini player or Now Playing shows, the phone's volume buttons set the room's volume, by the **Volume button step**; held, they keep going. Otherwise, and in the background, they're the phone's own; so they are right after choosing another room, until its volume has been read.
-- **Now Playing:** drag the progress bar to seek. **Previous** goes back to the track's start once it has played more than 5 seconds, else to the track before, as in most players; on a radio stream or the TV it's the speaker's own. With **Quick skip** set in App settings, the buttons beside Play skip back or forward by its step, shown in their arrows; they're greyed out where the bar is, as on the TV or a radio stream. Shuffle and Repeat light up while on; Repeat goes from off to all to one. **Queue** opens the room's queue. Close the screen with **⌄**, a swipe down, or Back.
+- **Now Playing:** drag the progress bar to seek. **Previous** goes back to the track's start once it has played more than 5 seconds, else to the track before, as in most players; on a radio stream or the TV it's the speaker's own. With **Quick skip** set in App settings, the buttons beside Play skip back or forward by its step, shown in their arrows; they're greyed out where the bar is, as on the TV or a radio stream. Shuffle and Repeat light up while on; Repeat goes from off to all to one. The row at the foot is the room's, as in the Sonos app: the queue icon at the left opens its queue, its name is in the middle, and the **heart** at the right saves what plays as a Sonos favourite and fills, as a room's ✓ does; a tap on the filled heart removes it again. It shows for a track from a server or the Music library and for a music service's radio station; a server's track shows among the Favorites here, not in the Sonos app, which hides those. Close the screen with **⌄**, a swipe down, or Back.
 - **Room settings:** the icon at the top right of the Rooms card opens a sheet with the rooms, the one the player controls already open; a tap on another opens its own settings right under it and closes the one before. As the Sonos app has them: **Trueplay tuning**; **EQ** (Bass, Treble, Height level, Loudness); **Volume limit**; **Sub audio** with a bonded Sub (Sub, Sub level, and Phase control while Trueplay is off); **Home theater** on a soundbar (Speech Enhancement, Night Sound, TV dialog sync); and **Hardware** (Status Light, Touch controls). Only what the room's speaker has shows, and a change applies at once.
 - **Queue:** tap a track to play it; its **✕** removes it at once. **Clear queue** asks first.
 
 ### App settings
 
-The App settings card opens with a tap anywhere on it and closes with a tap on its title; it starts closed and then stays as you left it. When it opens, all of it scrolls into view.
+The App settings card opens with a tap anywhere on it and closes with a tap on its title; it starts closed and then stays as you left it. When it opens, all of it scrolls into view. Its last line is the app's version and copyright.
 
 | Setting            | What it does                                                                                                                                                       |
 | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -110,7 +110,7 @@ No other permissions. Nothing runs in the background: the app asks the room what
 
 ## Credits
 
-The icons are Google's Material Icons `cast`, `check_circle`, `chevron_right`, `close`, `expand_more`, `folder`, `grid_view`, `home`, `library_music`, `more_vert`, `music_note`, `pause`, `play_arrow`, `radio_button_unchecked`, `record_voice_over`, `refresh`, `repeat`, `repeat_one`, `replay`, `shuffle`, `skip_next`, `skip_previous`, `speaker`, `timer`, `tune`, `view_list`, `volume_off` and `volume_up`, under the Apache License 2.0.
+The icons are Google's Material Icons `cast`, `check_circle`, `chevron_right`, `close`, `expand_more`, `favorite`, `favorite_border`, `folder`, `grid_view`, `home`, `library_music`, `more_vert`, `music_note`, `pause`, `play_arrow`, `queue_music`, `radio_button_unchecked`, `record_voice_over`, `refresh`, `repeat`, `repeat_one`, `replay`, `shuffle`, `skip_next`, `skip_previous`, `speaker`, `timer`, `tune`, `view_list`, `volume_off` and `volume_up`, under the Apache License 2.0.
 
 ## License
 

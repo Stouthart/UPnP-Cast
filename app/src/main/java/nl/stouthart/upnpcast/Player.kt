@@ -128,9 +128,6 @@ class Player(private val a: Activity) {
             refresh()
         }
 
-    /** Runs when the mini player shows or hides. */
-    var onShown: ((Boolean) -> Unit)? = null
-
     /** Runs after the player followed the speakers to a new group, with the household as it is now. */
     var onRegroup: ((Upnp.Topology) -> Unit)? = null
 
@@ -187,7 +184,17 @@ class Player(private val a: Activity) {
     private val repeat: ImageView? = a.findViewById(R.id.player_repeat)
     private val back: View? = a.findViewById(R.id.player_back)
     private val forward: View? = a.findViewById(R.id.player_forward)
+    private val heart: ImageView? = a.findViewById(R.id.player_heart)
+    private val roomName: TextView? = a.findViewById(R.id.player_room) // Now Playing's, in a row of its own.
     private val full = progress != null
+
+    // The heart: what plays now as a favourite (see Favorites), by its key, its DIDL to save it, and the favourite's id
+    // while it is one: null when it isn't, "" while a save is on its way. Main thread only.
+    private var heartKey = ""
+    private var heartItem: String? = null
+    private var heartId: String? = null
+    private var saveableFor: List<Any?> = emptyList() // What saveable() last built its answer from, and that answer.
+    private var saveableItem: Pair<String, String>? = null
 
     // Now Playing's cover by the screen's short side, which covers its widest in either orientation; the mini player
     // makes that size too, from the same download, so Now Playing has it the moment it opens.
@@ -253,6 +260,7 @@ class Player(private val a: Activity) {
         a.findViewById<View?>(R.id.player_previous)?.setOnClickListener { command(Sonos::previous) }
         a.findViewById<View?>(R.id.player_next)?.setOnClickListener { command(Sonos::next) }
         a.findViewById<View?>(R.id.player_queue)?.setOnClickListener { open(QueueActivity::class.java) }
+        heart?.setOnClickListener { toggleHeart() }
         shuffle?.setOnClickListener {
             command { r ->
                 val m = Sonos.mode(r) // Read right before, as for Play/Pause.
@@ -388,6 +396,7 @@ class Player(private val a: Activity) {
 
     /** Asks the room at the Polling interval from the main screen: 2 s by default, up to 10 s. Watches WiFi meanwhile. */
     fun start() {
+        heartKey = "" // The favourites are read again: one may have been saved or removed meanwhile, also elsewhere.
         Lan.start(a, lan)
         if (full && Lan.wifi == null) a.finish() // As when WiFi went while the app was away.
         place()
@@ -634,6 +643,102 @@ class Player(private val a: Activity) {
         a.runOnUiThread { if (g == gen) show(r, answer) }
     }
 
+    /**
+     * What plays now as a favourite to save, by its key: a service's station, a Music library track, a server's track.
+     * Null for anything else, as Spotify Connect, the TV, line-in, AirPlay, Sonos Radio or a station's bare stream.
+     * Built again only when what it's built from changes: the track and station are parsed once per change already,
+     * so at a poll that changes nothing this is a comparison.
+     */
+    private fun saveable(r: Room, answer: Answer, kind: Source, t: Track?, st: Station?): Pair<String, String>? {
+        val p = answer.pos
+        val service = if (kind == Source.RADIO) st?.uri?.let(::serviceId)?.let { Prefs.service(a, it) }.orEmpty() else ""
+        val from = listOf(r.host, kind, p.uri, t, st, service)
+        if (from == saveableFor) return saveableItem
+        val didl = when (kind) {
+            Source.RADIO -> st?.let { Favorites.station(it.uri, it.name, it.art, service) }
+            Source.LIBRARY -> t?.let { Favorites.library(p.uri, it.title, r.host, it.protocol) }
+            Source.SERVER -> t?.let { Favorites.server(p.uri, it.title, it.artist, it.art, it.protocol, p.meta.orEmpty()) }
+            else -> null
+        }
+        saveableFor = from
+        saveableItem = didl?.let { Favorites.key(if (kind == Source.RADIO) st!!.uri else p.uri) to it }
+        return saveableItem
+    }
+
+    /**
+     * The heart for [item], what plays now: hidden for what can't be a favourite; else, for something new, hidden until
+     * the favourites are read, so it never shows the wrong state, then outlined or filled.
+     */
+    private fun heart(r: Room, item: Pair<String, String>?) {
+        val h = heart ?: return
+        if (item == null) {
+            heartKey = ""
+            h.shown = false
+            return
+        }
+        heartItem = item.second
+        if (item.first == heartKey) return
+        val key = item.first
+        heartKey = key
+        h.shown = false
+        later {
+            val f = runCatching { Sonos.favorites(r) }.getOrNull()
+            a.runOnUiThread {
+                if (key != heartKey) return@runOnUiThread
+                // Unknown: no heart, rather than a wrong one, and the next poll asks again.
+                if (f == null) return@runOnUiThread run { heartKey = "" }
+                heartId = match(f, key)
+                drawHeart()
+                h.shown = true
+            }
+        }
+    }
+
+    /** Saves what plays as a favourite, or removes it: the heart turns at once; the favourites read after confirm it. */
+    private fun toggleHeart() {
+        val key = heartKey.ifEmpty { return }
+        val didl = heartItem ?: return
+        val id = heartId
+        if (id == "") return // A save on its way: the heart follows once it's in.
+        heartId = if (id == null) "" else null
+        drawHeart()
+        command { r ->
+            try {
+                if (id == null) Sonos.addFavorite(r, didl) else Sonos.removeFavorite(r, id)
+            } catch (_: Exception) {
+                a.runOnUiThread {
+                    a.toast(a.getString(if (id == null) R.string.favorite_error else R.string.unfavorite_error))
+                    if (key == heartKey) { // As it was, unless the read below says otherwise.
+                        heartId = id
+                        drawHeart()
+                    }
+                }
+            } finally {
+                val f = runCatching { Sonos.favorites(r) }.getOrNull()
+                a.runOnUiThread {
+                    if (key != heartKey) return@runOnUiThread
+                    if (f != null) {
+                        heartId = match(f, key)
+                        drawHeart()
+                    } else { // Unconfirmed, maybe saved after all: no heart until the next poll has read them again.
+                        heartKey = ""
+                        heart?.shown = false
+                    }
+                }
+            }
+        }
+    }
+
+    private fun match(favorites: List<Entry>, key: String) =
+        favorites.firstOrNull { it.fav?.uri?.isNotEmpty() == true && Favorites.key(it.fav.uri) == key }?.id
+
+    /** Filled in the text's colour while what plays is a favourite, as a room's ✓; grey and outlined while it isn't. */
+    private fun drawHeart() {
+        val on = heartId != null
+        heart?.setImageResource(if (on) R.drawable.ic_heart_on else R.drawable.ic_heart)
+        heart?.contentDescription = a.getString(if (on) R.string.favorite_remove else R.string.favorite_add)
+    }
+
     private fun show(play: Boolean) {
         if (play == playing) return
         playing = play
@@ -667,7 +772,6 @@ class Player(private val a: Activity) {
         val now = if (on) View.VISIBLE else View.GONE
         if (view.visibility == now) return
         view.visibility = now
-        onShown?.invoke(on)
     }
 
     /**
@@ -730,6 +834,7 @@ class Player(private val a: Activity) {
         }
         val st = answer?.station
         val kind = if (answer != null) source(answer.pos.uri, Prefs.model(a, r.id)) else Source.OTHER
+        if (full) heart(r, answer?.let { saveable(r, it, kind, t, st) })
         val name = when {
             answer == null -> a.unreachable(r.name)
             t != null -> t.title
@@ -743,7 +848,8 @@ class Player(private val a: Activity) {
         // A radio stream: its station where the artist goes, as the Sonos app has it, and its logo as the cover. Not
         // twice: between songs a station may send its own name as the song.
         val artist = t?.artist?.ifEmpty { st?.name?.takeIf { it != t.title } }.orEmpty()
-        val detail = listOf(r.name, artist, if (full) t?.album ?: "" else "").filter { it.isNotEmpty() }.joinToString(" · ")
+        // The room leads the mini player's line; Now Playing has it in its own row, under the controls.
+        val detail = listOf(if (full) "" else r.name, artist, if (full) t?.album ?: "" else "").filter { it.isNotEmpty() }.joinToString(" · ")
         val cover = when {
             // Sonos Radio: the speaker's copy of a track's cover can be another station's logo; its station's is right.
             kind == Source.SONOS_RADIO -> st?.let { cover(r, it.art, it.uri) }
@@ -755,7 +861,7 @@ class Player(private val a: Activity) {
         // track, but its input format.
         val src = if (full && answer != null) sourceName(kind, answer.pos.uri).takeIf { it != name } ?: "" else ""
         val quality = listOf(src, t?.format ?: answer?.tv ?: "").filter { it.isNotEmpty() }.joinToString(" · ")
-        val now = "$name\n$detail\n$cover\n$quality"
+        val now = "${r.name}\n$name\n$detail\n$cover\n$quality"
         if (now != shown) {
             shown = now
             if (title.text.toString() != name) {
@@ -764,8 +870,9 @@ class Player(private val a: Activity) {
             }
             title.setTextColor(a.getColor(if (answer == null) R.color.warning else R.color.text)) // No WiFi, or no room.
             meta.text = SpannableString(detail).apply {
-                if (r.name.isNotEmpty()) setSpan(ForegroundColorSpan(a.getColor(R.color.accent_text)), 0, r.name.length, 0)
+                if (!full && r.name.isNotEmpty()) setSpan(ForegroundColorSpan(a.getColor(R.color.accent_text)), 0, r.name.length, 0)
             }
+            roomName?.text = r.name
             // A lossless track's format in green: it reaches the speaker as it was recorded.
             format?.text = SpannableString(quality).apply {
                 val f = t?.format.orEmpty()

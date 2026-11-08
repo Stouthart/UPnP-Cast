@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Now Playing: the player's views at full size, plus progress, transport and play mode. The cover is sized in code.
-     20dp sides: the cover and Queue there, the text and bars 16dp further in, at 36dp from the screen's edge, where
-     every other screen's content and the mini player's cover and Play circle are. -->
+     20dp sides: the cover there, the text and bars 16dp further in, at 36dp from the screen's edge, where every other
+     screen's content and the mini player's cover and Play circle are, as are the glyphs of the room's row. -->
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/scroll"
     android:layout_width="match_parent"
@@ -39,7 +39,7 @@
             android:importantForAccessibility="no"
             android:scaleType="centerCrop" />
 
-        <!-- Keeps the controls and the Queue button at the bottom: room the cover can't take, once it's as wide as the
+        <!-- Keeps the controls and the room's row at the bottom: room the cover can't take, once it's as wide as the
              screen allows, goes here, between it and the title. -->
         <View
             android:id="@+id/spacer"
@@ -47,12 +47,14 @@
             android:layout_height="0dp"
             android:layout_weight="1" />
 
-        <!-- Text and volume are inset 16dp: the SeekBars' own padding, so everything lines up with their tracks. -->
+        <!-- Text and volume are inset 16dp: the SeekBars' own padding, so everything lines up with their tracks. Below the
+             cover the rows stand 20dp apart by what they draw, as from the controls down: 12.4dp above the title, whose
+             letters start 7.6dp into its line, and 13.8dp above the progress bar, whose dot starts 6.2dp into it. -->
         <TextView
             android:id="@+id/player_title"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="24dp"
+            android:layout_marginTop="12.4dp"
             android:paddingHorizontal="16dp"
             android:ellipsize="end"
             android:fontFamily="sans-serif-medium"
@@ -84,7 +86,7 @@
             android:id="@+id/player_progress"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
+            android:layout_marginTop="13.8dp"
             android:progressBackgroundTint="@color/text2"
             android:progressTint="@color/accent"
             android:thumbTint="@color/accent" />
@@ -210,7 +212,7 @@
         </LinearLayout>
 
         <!-- 9dp above and -11dp below: the icon's box reaches 11dp past the speaker and the slider both ways, so the
-             row is 20dp from the controls and the Queue button, as the rows above are from each other. The speaker's
+             row is 20dp from the controls and the room's row, as the rows above are from each other. The speaker's
              box reaches into the row's padding, left unclipped so its touch feedback shows whole. -->
         <LinearLayout
             android:layout_width="match_parent"
@@ -254,12 +256,55 @@
                 android:textSize="15sp" />
         </LinearLayout>
 
-        <TextView
-            android:id="@+id/player_queue"
-            style="@style/Button"
+        <!-- The room's row, on a panel where the Queue button was, 56dp as the controls' row: the Queue at the left, the
+             room in the middle, and at the right the heart that saves what plays as a Sonos favourite, filled while it is
+             one. Their glyphs at 28dp, as Shuffle's and Repeat's, in the middle of a 48dp touch area; each ends on its
+             36dp line, 16dp inside the panel, by what it draws: the queue's 3.5dp and the heart's 2.33dp inside its box.
+             The queue's glyph sits 1.17dp low in its box: its padding lifts it, so both glyphs share the panel's middle
+             while their touch areas stay centred. -->
+        <FrameLayout
+            android:layout_width="match_parent"
+            android:layout_height="56dp"
             android:layout_marginTop="20dp"
-            android:background="@drawable/button_quiet"
-            android:text="@string/queue"
-            android:textColor="@color/text" />
+            android:background="@drawable/panel">
+
+            <ImageView
+                android:id="@+id/player_queue"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:layout_gravity="start|center_vertical"
+                android:layout_marginStart="2.5dp"
+                android:background="@drawable/control"
+                android:contentDescription="@string/queue"
+                android:paddingBottom="11.17dp"
+                android:paddingHorizontal="10dp"
+                android:paddingTop="8.83dp"
+                android:src="@drawable/ic_queue" />
+
+            <!-- Clear of the two touch areas, so a long name ends in "…" before them. -->
+            <TextView
+                android:id="@+id/player_room"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center_vertical"
+                android:layout_marginHorizontal="52dp"
+                android:ellipsize="end"
+                android:gravity="center"
+                android:maxLines="1"
+                android:textColor="@color/accent_text"
+                android:textSize="16sp" />
+
+            <ImageView
+                android:id="@+id/player_heart"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:layout_gravity="end|center_vertical"
+                android:layout_marginEnd="3.67dp"
+                android:background="@drawable/control"
+                android:contentDescription="@string/favorite_add"
+                android:padding="10dp"
+                android:src="@drawable/ic_heart"
+                android:visibility="gone" />
+        </FrameLayout>
     </LinearLayout>
 </ScrollView>

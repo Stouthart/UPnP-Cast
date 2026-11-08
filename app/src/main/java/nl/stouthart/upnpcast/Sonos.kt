@@ -2,15 +2,17 @@ package nl.stouthart.upnpcast
 
 import android.os.SystemClock
 import android.util.Log
-import android.util.Xml
 import org.xmlpull.v1.XmlPullParser.END_DOCUMENT
 import org.xmlpull.v1.XmlPullParser.START_TAG
+import org.xmlpull.v1.XmlPullParserFactory
 import java.io.IOException
 import java.io.StringReader
 import java.net.URLEncoder
 import java.util.Locale
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ExecutionException
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.abs
 
 /** Where tracks go in the room's queue, in the Sonos app's terms. */
@@ -25,6 +27,9 @@ private const val NO_TRACK = 711
 /** Sonos's answer to a queue change sent with a revision the queue has moved past: it changed meanwhile. */
 const val QUEUE_CHANGED = 1028
 
+/** Sonos's answer to a favourite for a link it has one for already: no duplicates. */
+private const val FAVORITE_EXISTS = 803
+
 enum class Repeat { OFF, ALL, ONE }
 
 /** What the room is playing, from its TrackMetaData; [art] may be relative to the speaker. */
@@ -32,6 +37,7 @@ enum class Repeat { OFF, ALL, ONE }
 class Track(
     val title: String, val artist: String, val album: String, val art: String, val format: String, val uri: String,
     val lossless: Boolean, // See Res.lossless: Now Playing shows the format in green.
+    val protocol: String = "", // Its resource's protocolInfo, as the speaker reported it: what a favourite of it plays as.
 )
 
 /**
@@ -53,6 +59,12 @@ fun speakerState(text: String) = text.startsWith("ZPSTR_")
 
 /** A radio station as GetMediaInfo has it: its name, its logo, and the URI the speaker keeps that logo for. */
 class Station(val name: String, val art: String, val uri: String)
+
+/** The music plays, but a batch after the one it started from failed: only part of the tracks are in the queue. */
+class PartlyQueued(cause: Exception) : IOException(cause)
+
+/** The queue changed between two of its pages, as when tracks go in or out meanwhile: the pages don't fit together. */
+class QueueChanged : IOException("The queue changed while it was read")
 
 /**
  * The room's track as raw TrackMetaData (parse it with [Sonos.track] only when it changed), its queue position,
@@ -400,9 +412,14 @@ object Sonos {
         return Position(meta, index?.toIntOrNull() ?: 0, seconds(elapsed), seconds(duration), uri ?: "")
     }
 
+    /**
+     * The track in TrackMetaData [didl], once per change of it. Namespace-aware, as Android's own parser is, so any prefix
+     * and either quote do; the factory's, so it reads on the computer too.
+     */
     fun track(didl: String?): Track? {
         if (didl.isNullOrBlank() || didl == "NOT_IMPLEMENTED") return null
-        val p = Xml.newPullParser().apply { setInput(StringReader(noDtd(didl))) }
+        val p = XmlPullParserFactory.newInstance().apply { isNamespaceAware = true }.newPullParser()
+            .apply { setInput(StringReader(noDtd(didl))) }
         var title = ""
         var artist = ""
         var album = ""
@@ -445,36 +462,68 @@ object Sonos {
         // from GetMediaInfo goes there instead. Also while paused, when the station sends no song: then no track,
         // and the station's name is the title.
         val own = if (linkTitle(title, uri)) "" else title
-        if (stream.isNotEmpty()) return Track(stream, own, album, art, format, uri, lossless)
-        return if (own.isEmpty()) null else Track(own, artist, album, art, format, uri, lossless)
+        if (stream.isNotEmpty()) return Track(stream, own, album, art, format, uri, lossless, info)
+        return if (own.isEmpty()) null else Track(own, artist, album, art, format, uri, lossless, info)
     }
 
+    // Per room, by its coordinator: changes to its queue take turns, also from different screens, so their batches never
+    // interleave. A newer Play now, Replace queue, favourite or Clear queue stops a fill still going at its next batch:
+    // those tracks are about to go anyway.
+    private class Fill {
+        val lock = Any()
+        val turn = AtomicInteger()
+    }
+
+    private val fills = ConcurrentHashMap<String, Fill>()
+
+    private fun fill(r: Room): Fill = fills.computeIfAbsent(r.host) { Fill() }
+
+    /** A Play now, Replace queue or favourite for [r], asked for now: its turn, for play() or favorite(). */
+    fun turn(r: Room): Int = fill(r).turn.incrementAndGet()
+
     /**
-     * Puts [tracks] in [r]'s queue as [how] says; for [How.NOW] and [How.REPLACE] it then plays, from the track at
-     * index [start] of [tracks].
+     * Puts [tracks] in [r]'s queue as [how] says; for [How.NOW] and [How.REPLACE] it plays from the track at index
+     * [start] of [tracks] as soon as the batch holding it is in, [started] then, and the rest go in while it plays:
+     * 500 tracks take 32 calls, about two seconds from a phone, which the music no longer waits for. A failure after it
+     * started is a PartlyQueued. Those two go only while [turn] (see turn(), else taken now) is the room's latest: one
+     * asked for since stops this one before its next batch, or before it begins.
      */
-    fun play(r: Room, tracks: List<Entry>, how: How, start: Int = 0) {
+    fun play(r: Room, tracks: List<Entry>, how: How, start: Int = 0, turn: Int = 0, started: () -> Unit = {}) {
+        val fill = fill(r)
+        val plays = how == How.NOW || how == How.REPLACE
+        val mine = if (!plays) 0 else if (turn > 0) turn else fill.turn.incrementAndGet()
+        val wanted = { !plays || fill.turn.get() == mine }
+        synchronized(fill.lock) { if (wanted()) put(r, tracks, how, start, plays, wanted, started) }
+    }
+
+    private fun put(r: Room, tracks: List<Entry>, how: How, start: Int, plays: Boolean, wanted: () -> Boolean, started: () -> Unit) {
         val queued = queued(r)
         // With shuffle on, the speaker counts queue positions in its shuffled order, so a track's number in the order
-        // added plays another. Off while the queue fills and the track starts, then on again: the speaker shuffles the
-        // rest and keeps that track playing, as the Sonos app does. Back on also after a failure, if it can be.
-        val plays = how == How.NOW || how == How.REPLACE
+        // added plays another. Off while the queue fills and the track starts, until the last batch is in, then on
+        // again: the speaker shuffles the rest and keeps that track playing, as the Sonos app does. Back on also after
+        // a failure, if it can be.
         val shuffled = if (plays) mode(r).takeIf { it.shuffle } else null
         if (shuffled != null) mode(r, Mode(false, shuffled.repeat))
+        var playing = false
+        val from = if (plays) start else -1
+        val ready = { n: Int ->
+            start(r, n, queued)
+            playing = true
+            started()
+        }
         try {
-            val first = when (how) {
+            when (how) {
                 How.REPLACE -> {
                     avt(r, "RemoveAllTracksFromQueue")
-                    add(r, tracks, 0, false)
+                    add(r, tracks, 0, false, from, ready, wanted)
                 }
                 // After the current track while the queue plays; otherwise there is no current track to follow.
-                How.NOW, How.NEXT -> add(r, tracks, if (queued) position(r).index + 1 else 0, queued) // Index only: no parse.
+                How.NOW, How.NEXT -> add(r, tracks, if (queued) position(r).index + 1 else 0, queued, from, ready, wanted) // Index only: no parse.
                 How.END -> add(r, tracks, 0, false)
             }
-            if (plays) start(r, first + start, queued)
         } catch (e: Exception) {
             if (shuffled != null) runCatching { mode(r, shuffled) }
-            throw e
+            throw if (playing) PartlyQueued(e) else e
         }
         if (shuffled != null) mode(r, shuffled)
     }
@@ -483,7 +532,13 @@ object Sonos {
      * Plays favourite [f] on [r]: a playlist or album replaces the queue and plays from its first track; anything
      * else, as a station, plays at once.
      */
-    fun favorite(r: Room, f: Favorite) {
+    fun favorite(r: Room, f: Favorite, turn: Int = 0) {
+        val fill = fill(r)
+        val mine = if (turn > 0) turn else fill.turn.incrementAndGet()
+        synchronized(fill.lock) { if (fill.turn.get() == mine) start(r, f) } // Not when another was asked for since.
+    }
+
+    private fun start(r: Room, f: Favorite) {
         val uri = Upnp.esc(f.uri)
         val md = Upnp.esc(f.meta)
         if (listOf("x-rincon-cpcontainer:", "x-rincon-playlist:", "file:").none { f.uri.startsWith(it) }) {
@@ -504,6 +559,39 @@ object Sonos {
         start(r, first, queued)
     }
 
+    /** The household's favourites (FV:2), as [r]'s player keeps them for every room. */
+    fun favorites(r: Room): List<Entry> = favorites(Server("", "", r.host, contentDirectory(r), null, favorites = true))
+
+    /** The favourites at [s], a player's FV:2, over all their pages: ~8 KB for 8. */
+    fun favorites(s: Server): List<Entry> {
+        val out = ArrayList<Entry>()
+        // Sonos sends 100 at most per Browse; only forward, and a few pages at most.
+        for (page in 0 until 5) {
+            val p = Upnp.browse(s, "FV:2", out.size, QUEUE_PAGE)
+            out += p.entries
+            if (p.returned <= 0 || out.size >= p.total) break
+        }
+        return out
+    }
+
+    /** Saves [didl] (see Favorites) as a favourite; one for that link already is no failure, it's what was asked. */
+    fun addFavorite(r: Room, didl: String) {
+        try {
+            Http.soap(contentDirectory(r), "ContentDirectory", "CreateObject", "<ContainerID>FV:2</ContainerID><Elements>${Upnp.esc(didl)}</Elements>")
+        } catch (e: HttpException) {
+            if (e.upnp != FAVORITE_EXISTS) throw e
+        }
+    }
+
+    /** Removes favourite [id] (FV:2/n), that one alone, at the player whose ContentDirectory is [control]. */
+    fun removeFavorite(control: String, id: String) {
+        // Only ever a favourite: DestroyObject takes any object the player has.
+        if (!id.startsWith("FV:2/")) throw IOException("Not a favourite: $id")
+        Http.soap(control, "ContentDirectory", "DestroyObject", "<ObjectID>${Upnp.esc(id)}</ObjectID>")
+    }
+
+    fun removeFavorite(r: Room, id: String) = removeFavorite(contentDirectory(r), id)
+
     /** Plays queue position [n] (1-based), switching the room to its queue first when it plays something else. */
     fun jump(r: Room, n: Int) = start(r, n, queued(r))
 
@@ -513,8 +601,11 @@ object Sonos {
         avt(r, "Play", "<Speed>1</Speed>")
     }
 
+    /** Empties [r]'s queue; a fill still going stops first, rather than filling it again. */
     fun clear(r: Room) {
-        avt(r, "RemoveAllTracksFromQueue")
+        val fill = fill(r)
+        fill.turn.incrementAndGet()
+        synchronized(fill.lock) { avt(r, "RemoveAllTracksFromQueue") }
     }
 
     /**
@@ -537,15 +628,26 @@ object Sonos {
     fun scanning(control: String) = Upnp.arg(Http.soap(control, "ContentDirectory", "GetShareIndexInProgress"), "IsIndexing") == "1"
 
     /** The room's queue over all its pages; [url] vets each cover and track URL, as for a server. */
-    fun queue(r: Room, url: (String) -> String?, wanted: () -> Boolean = { true }): List<Entry> {
+    fun queue(r: Room, url: (String) -> String?, wanted: () -> Boolean = { true }, each: (List<Entry>, Int) -> Unit = { _, _ -> }) =
+        pages({ Upnp.browse(contentDirectory(r), url, "Q:0", it, QUEUE_PAGE) }, wanted, each)
+
+    /**
+     * A queue's pages, each read by [page] from its start, up to 10,000 tracks in at most 200 pages, and only forward: a
+     * page of nothing, or a negative count, ends it. [wanted] is asked before each page: a load the screen has left, or
+     * overtaken, stops there. [each] gets every page as it comes, with the queue's length. Every page must come from
+     * the first one's revision (UpdateID): a track in or out between two would shift the rest, keeping a removed track
+     * or skipping another, so that's a QueueChanged.
+     */
+    fun pages(page: (Int) -> Upnp.Page, wanted: () -> Boolean = { true }, each: (List<Entry>, Int) -> Unit = { _, _ -> }): List<Entry> {
         val out = ArrayList<Entry>()
         var start = 0
         var pages = 0
-        // Up to 10,000 tracks in at most 200 pages, and only forward: a page of nothing, or a negative count, ends it.
-        // [wanted] is asked before each page: a load the screen has left, or overtaken, stops there.
+        var revision: Long? = null
         while (out.size < 10_000 && pages++ < 200 && wanted()) {
-            val p = Upnp.browse(contentDirectory(r), url, "Q:0", start, QUEUE_PAGE)
+            val p = page(start)
+            if (pages == 1) revision = p.update else if (p.update != revision) throw QueueChanged()
             out += p.entries
+            each(p.entries, p.total)
             if (p.returned <= 0) break
             start += p.returned
             if (start >= p.total) break
@@ -558,11 +660,18 @@ object Sonos {
 
     private fun contentDirectory(r: Room) = "http://${r.host}/MediaServer/ContentDirectory/Control"
 
-    /** Adds [tracks] at queue position [at] (0 = the end); returns the position of the first one. */
-    private fun add(r: Room, tracks: List<Entry>, at: Int, next: Boolean): Int {
+    /**
+     * Adds [tracks] at queue position [at] (0 = the end), one after the other, while [wanted]. Once the batch holding
+     * the track at index [play] of [tracks] is in, [ready] gets that track's position.
+     */
+    private fun add(
+        r: Room, tracks: List<Entry>, at: Int, next: Boolean, play: Int = -1, ready: (Int) -> Unit = {}, wanted: () -> Boolean = { true },
+    ) {
         var first = -1
         var pos = at
+        var added = 0
         for (batch in tracks.chunked(BATCH)) {
+            if (!wanted()) break
             // The lists are space-separated; MinimServer escapes spaces in its URLs, but another server might not.
             val uris = batch.joinToString(" ") { it.res!!.url.replace(" ", "%20") }
             val meta = batch.joinToString(" ") { didl(it) }
@@ -576,8 +685,9 @@ object Sonos {
             val n = Upnp.arg(reply, "FirstTrackNumberEnqueued")?.toIntOrNull() ?: throw IOException("No queue position")
             if (first < 0) first = n
             if (pos > 0) pos = n + batch.size
+            added += batch.size
+            if (play in added - batch.size until added) ready(first + play)
         }
-        return first
     }
 
     /** The track's metadata: Sonos shows it, and hands rate and bit depth back in TrackMetaData for Now Playing. */

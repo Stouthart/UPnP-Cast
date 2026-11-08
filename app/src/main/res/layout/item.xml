@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- A container or track: cover (or icon), title, detail line, and a chevron for containers; in the Queue, ✕ instead.
+<!-- A container or track: cover (or icon), title, detail line, and a chevron for containers; in the Queue and in
+     Favorites as a list, ✕ instead.
      Its padding unclipped, for the ✕'s feedback. -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
@@ -68,7 +69,7 @@
         android:importantForAccessibility="no"
         android:src="@drawable/ic_chevron" />
 
-    <!-- The Queue's: removes the track. Its glyph, drawn 5dp inside the 24dp box at the middle of its 48dp touch area,
+    <!-- The Queue's and Favorites': removes the track or the favourite. Its glyph, drawn 5dp inside the 24dp box at the middle of its 48dp touch area,
          ends 20dp inside the row, as a room row's last glyph; the area reaches 9dp into the row's padding. Not
          focusable, so a tap anywhere else still plays the track. -->
     <ImageView

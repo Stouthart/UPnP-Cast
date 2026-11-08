@@ -207,7 +207,8 @@ object Didl {
 
     /**
      * The Sonos favourites (FV:2) from the player at [control]: each by its title and its service ("90s90s Radio") as
-     * the artist. The cover is the player's own: the favourite's, else its copy for the favourite's link.
+     * the artist. The cover is the favourite's, on the player or on a server this app knows (a server track's); else the
+     * player's copy for the favourite's link.
      */
     fun favorites(xml: String, control: String): List<Entry> {
         if (xml.isBlank()) return emptyList()
@@ -245,11 +246,15 @@ object Didl {
                 "description" -> service = p.nextText()
                 "res" -> uri = p.nextText().trim()
                 "resMD" -> meta = p.nextText() // DIDL-Lite of its own, as text: the speaker takes it back as it is.
-                "albumArtURI" -> if (art == null) art = player(base, p.nextText().trim()) // A cover, never a track's link.
+                "albumArtURI" -> if (art == null) art = cover(base, p.nextText().trim()) // A cover, never a track's link.
             }
         }
         return out
     }
+
+    /** [u] on the player at [base], or an http link on a server the main screen found. */
+    private fun cover(base: URL, u: String) = player(base, u)
+        ?: runCatching { URL(u) }.getOrNull()?.takeIf { it.protocol == "http" && it.host in Player.servers }?.toString()
 
     private fun local(host: String, url: String): String? = if (url.isEmpty()) null
     else runCatching { URL(url) }.getOrNull()?.takeIf { it.protocol == "http" && it.host == host }?.toString()

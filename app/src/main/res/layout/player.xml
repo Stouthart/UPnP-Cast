@@ -69,11 +69,12 @@
     </LinearLayout>
 
     <!-- -11dp at the start: the speaker, drawn 3dp into its box, starts on the cover's line. -11dp at the foot: the
-         box reaches 11dp below the speaker and the slider, so the card's padding counts from what shows. -->
+         box reaches 11dp below the speaker and the slider, so the card's padding counts from what shows. 8.7dp above:
+         the speaker starts 11.3dp into its box, so it stands 20dp under the cover, as Now Playing's rows stand apart. -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="10dp"
+        android:layout_marginTop="8.7dp"
         android:layout_marginBottom="-11dp"
         android:gravity="center_vertical"
         android:orientation="horizontal">

@@ -56,7 +56,6 @@ class MainActivity : Activity() {
     private lateinit var serversSummary: TextView
     private lateinit var servers: LinearLayout
     private lateinit var player: Player
-    private lateinit var copyright: TextView
     private var gen = 0 // Drops results from a search that a newer one, or onStop, has overtaken.
     private var found: List<Room> = emptyList() // The rows: every room.
     private var household: Upnp.Topology? = null
@@ -84,11 +83,9 @@ class MainActivity : Activity() {
         }
         player = Player(this)
         player.onNetwork = { search() } // Another network may hold other rooms and servers; none, and the screen says so.
-        player.onShown = { copyright.shown = !it } // The player takes the foot of the screen.
         // Grouped elsewhere, as in the Sonos app: the checks follow. A change made here shows once it settled.
         player.onRegroup = { if (!settling) place(it) }
-        copyright = findViewById(R.id.copyright)
-        copyright.text = getString(R.string.copyright, BuildConfig.VERSION_NAME)
+        findViewById<TextView>(R.id.copyright).text = getString(R.string.copyright, BuildConfig.VERSION_NAME)
         allow.setOnClickListener {
             // After a second "Don't allow" Android stops asking; then only the app's settings page can grant it.
             if (shouldShowRequestPermissionRationale(ACCESS_LOCAL_NETWORK)) requestPermissions(arrayOf(ACCESS_LOCAL_NETWORK), 0)

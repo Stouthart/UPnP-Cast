@@ -1,8 +1,20 @@
-<!-- 2.1 - Copyright (C) 2026 Stouthart. All rights reserved. -->
+<!-- 2.2 - Copyright (C) 2026 Stouthart. All rights reserved. -->
 
 # Release notes
 
-Highlights per version, newest first, with 1.x condensed. 2.1 is the version distributed; the entries below it show how the app got there.
+Highlights per version, newest first, with 1.x condensed. 2.2 is the version distributed; the entries below it show how the app got there.
+
+## 2.2 - November 2026
+
+- **Favorites from Now Playing:** the heart saves what plays as a Sonos favourite, filled while it is one, in the text's colour as a room's ✓; a tap on the filled heart removes it. For a track from a server or the Music library, and for a music service's radio station, which then show in the Sonos app as well, as if saved there; a server's track shows in UPnP Cast's Favorites only, as the Sonos app hides those. A favourite saved or removed in the Sonos app shows here too, read again as the track changes and as Now Playing opens; Favorites reads its list again each time it shows, as after Now Playing.
+- **Remove a favourite:** in Favorites as a list, a tap on the **✕** at a favourite's end removes it at once, as in the Queue. A server track's favourite now shows its cover.
+- **The room's row on Now Playing:** at its foot, as in the Sonos app, the queue icon at the left, where the Queue button was, the room in the middle, no longer in the line under the title, and the heart at the right.
+- **Music sooner:** a tap on a track in a long list, **▶**, **Play now** or **Replace queue** plays as soon as that track is in the queue, the rest going in while it plays; the speaker takes 16 tracks per call, so 500 tracks took about two seconds before the music started. Another tap meanwhile, or **Clear queue**, stops the rest from going in and follows at once, where it waited for all of them; **Play next** and **Add to end of queue** wait their turn. Changes to a room's queue take turns, also from different screens. With shuffle on, it goes back on once all are in. Should the rest fail to go in, the music plays on and the app says **Unable to add to queue.**
+- **The Queue at once:** its first hundred tracks show as soon as the speaker sends them, about a tenth of a second, the rest following while the list is in use, as in Browse; it waited for the whole queue, half a second for 500 tracks. Read again, as after a **✕**, the list stays as it is until the whole queue is in.
+- **Albums apart:** an album remembers list or tiles by itself, so its numbered tracks can stay a list while categories, folders and Favorites show as tiles, or the other way round. A first install starts that way: albums as a list, the rest as tiles.
+- **Sturdier:** the Queue reads all its pages from one revision of the queue: a track added or removed meanwhile, as by another controller or a fill still going in, no longer leaves a removed track in the list or skips another; the list is read again, a few times if it keeps changing. A favourite keeps its format and cover however the speaker spells its metadata.
+- **Version in App settings:** the version and copyright line is the last line of App settings, where it no longer hides behind the mini player.
+- **Even spacing on Now Playing:** the rows under the cover stand 20dp apart, as from the controls down, and the cover takes the room that frees; the mini player's two rows stand as far apart.
 
 ## 2.1 - November 2026
 
@@ -28,7 +40,7 @@ Highlights per version, newest first, with 1.x condensed. 2.1 is the version dis
 
 The first release, then the Music library, group play, Room settings and Favorites.
 
-- **1.0** - A UPnP/DLNA music library on Sonos, browsed and played from Android. It finds the rooms and servers by itself and stays on the WiFi; Browse shows a server's own categories as a list or as tiles, with covers and each track's format; a tap plays a track with the rest of the list queued around it, and **⋯** offers Play now, Play next, Add to end of queue and Replace queue. The speaker fetches the music itself. A mini player, Now Playing and the Queue, in the Sonos app's terms; files up to 48 kHz, Sonos's limit over UPnP; Appearance and a Polling interval. 157 KB, no libraries, nothing running in the background.
+- **1.0** - A UPnP/DLNA music library on Sonos, browsed and played from Android. It finds the rooms and servers by itself and stays on the WiFi; Browse shows a server's own categories as a list or as tiles, with covers and each track's format; a tap plays a track with the rest of the list queued around it, and **⋯** offers Play now, Play next, Add to end of queue and Replace queue. The speaker fetches the music itself. A mini player, Now Playing and the Queue, in the Sonos app's terms; files up to 48 kHz, Sonos's limit over UPnP; Appearance and a Polling interval. 153 KB, no libraries, nothing running in the background.
 - **1.1** - Android 14 and 15 as well; **Home** in Browse; Spotify on the speaker with its cover and whether it's lossless; a source without track details named, as TV, and "Not supported on this source" for a control it doesn't offer; Now Playing's progress counting evenly; the mini player from the room's first item; a new icon.
 - **1.2** - The Sonos **Music library**, with **Scan for new content**; **▶** in Browse to play a level's tracks; the phone's volume buttons, by the new **Volume button step**; the TV's input format; settings that fold away; and sturdier requests: on the WiFi and to addresses only, with no endless paging, and sliders that follow a keyboard and TalkBack.
 - **1.3** - **Group rooms**, with one volume for the rooms together; every screen following grouping done elsewhere, as in the Sonos app; Now Playing at once, its cover larger on taller screens; the source on Now Playing, such as `MinimServer · FLAC 96 kHz 24-bit`; room icons by speaker kind, with the model; new colours.

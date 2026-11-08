@@ -15,6 +15,11 @@ import java.util.concurrent.Executors
 
 private const val TAG = "UPnPCast"
 
+// A queue that changed while it was read is read again, this often, this far apart: long enough to see out a fill of
+// 500 tracks (about two seconds) from a tap in Browse.
+private const val QUEUE_TRIES = 5
+private const val QUEUE_AGAIN_MS = 700L
+
 /** The room's queue: the playing track marked, a tap plays a track, ✕ removes one, and Clear queue empties it. */
 class QueueActivity : Activity() {
     private class Holder(v: View) {
@@ -32,6 +37,7 @@ class QueueActivity : Activity() {
     private val work = Executors.newSingleThreadExecutor() // Loads, in the order asked.
     private val sonos = Executors.newSingleThreadExecutor() // Jump, ✕ and Clear queue: never behind a long load.
     private var items: List<Entry> = emptyList()
+    private var length = 0 // The queue's tracks, as the speaker counts them: more than the rows while pages come in.
     private var current = -1 // The playing track's row, or -1 while the room plays something else.
     private var rows: Room? = null // The group whose queue the rows show, once loaded; null while none is.
     private var started = false // Between onStart and onStop: a jump or clear that ends later doesn't load again.
@@ -134,7 +140,8 @@ class QueueActivity : Activity() {
         adapter.notifyDataSetChanged()
     }
 
-    private fun load() {
+    /** Reads the queue; when it changes meanwhile, again after a moment, up to [tries] times in all. */
+    private fun load(tries: Int = QUEUE_TRIES) {
         val room = player.room ?: return
         val g = ++gen
         // Another group's queue: the old rows go at once, and Clear queue with them, so nothing acts on them; the same
@@ -148,24 +155,46 @@ class QueueActivity : Activity() {
         }
         if (items.isEmpty()) summary(getString(R.string.loading), R.color.text2)
         art.retry() // Covers that failed, as without WiFi, get another go when the rows show again.
+        // A first read shows each page as it comes, as Browse does: the first hundred tracks at once, the rest while the
+        // list is in use. A read again, as after ✕ or a change elsewhere, keeps the rows until the whole queue is in, so
+        // the list neither shrinks for a moment nor loses its place.
+        val paged = items.isEmpty()
         later(work) {
+            var known = 0
             val q = try {
-                Sonos.queue(room, { player.cover(room, it) }) { g == gen }
+                Sonos.queue(room, { player.cover(room, it) }, { g == gen }) { page, total ->
+                    page.forEach { it.meta = meta(resources, it) }
+                    known = total
+                    if (paged) runOnUiThread { if (g == gen) show(room, items + page, total) }
+                }
+            } catch (_: QueueChanged) {
+                runOnUiThread {
+                    if (g != gen) return@runOnUiThread
+                    if (tries <= 1) return@runOnUiThread summary(getString(R.string.queue_changed), R.color.warning)
+                    // Rows already shown stay: the next read keeps them until the whole queue is in.
+                    list.postDelayed({ if (started && g == gen) load(tries - 1) }, QUEUE_AGAIN_MS)
+                }
+                return@later
             } catch (e: Exception) {
                 Log.i(TAG, "Queue of ${room.name}: $e")
                 null
             }
-            q?.forEach { it.meta = meta(resources, it) }
             runOnUiThread {
                 if (g != gen) return@runOnUiThread
                 if (q == null) return@runOnUiThread summary(unreachable(room.name), R.color.warning)
-                items = q
-                rows = room
-                summary(resources.getQuantityString(R.plurals.track_count, q.size, q.size), R.color.success)
-                clear.visibility = if (q.isEmpty()) View.GONE else View.VISIBLE
-                adapter.notifyDataSetChanged()
+                show(room, q, known)
             }
         }
+    }
+
+    /** [q] as the rows of [room]'s queue, [total] tracks long: the whole queue, or its first pages while more come. */
+    private fun show(room: Room, q: List<Entry>, total: Int) {
+        items = q
+        rows = room
+        length = total
+        summary(resources.getQuantityString(R.plurals.track_count, total, total), R.color.success)
+        clear.visibility = if (q.isEmpty()) View.GONE else View.VISIBLE
+        adapter.notifyDataSetChanged()
     }
 
     /** The count line, in [color]: success with the queue in, warning when the room didn't answer, grey while loading. */
@@ -210,7 +239,8 @@ class QueueActivity : Activity() {
         gen++
         items = items.toMutableList().apply { removeAt(n) }
         if (n < current) current-- // The rows below move up; the playing one's place goes to the track after it.
-        summary(resources.getQuantityString(R.plurals.track_count, items.size, items.size), R.color.success)
+        length = maxOf(length - 1, items.size)
+        summary(resources.getQuantityString(R.plurals.track_count, length, length), R.color.success)
         clear.visibility = if (items.isEmpty()) View.GONE else View.VISIBLE
         adapter.notifyDataSetChanged()
         later(sonos) {

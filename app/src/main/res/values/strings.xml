@@ -86,9 +86,16 @@
     <string name="clear_error">Unable to clear queue.</string>
     <string name="remove_track">Remove from queue</string>
     <string name="remove_error">Unable to remove track.</string>
+    <!-- The heart and the Favorites' ✕, in the Sonos app's words without its name, as above. -->
+    <string name="favorite_add">Save to Favorites</string>
+    <string name="favorite_remove">Remove from Favorites</string>
+    <string name="favorite_error">Unable to save to Favorites.</string>
+    <string name="unfavorite_error">Unable to remove from Favorites.</string>
     <string name="cancel">Cancel</string>
     <string name="close">Close</string>
     <string name="cant_play">Couldn\'t play %1$s.</string>
+    <string name="queue_partly">Unable to add to queue.</string>
+    <string name="queue_changed">The queue kept changing while it loaded. Open it again.</string>
     <string name="regrouped">The rooms changed meanwhile. Try again.</string>
     <string name="cant_play_reach">Couldn\'t play %1$s. Couldn\'t connect to %2$s.</string>
 

@@ -380,23 +380,19 @@
                         style="@style/Segment"
                         android:text="@string/dark_mode" />
                 </LinearLayout>
+
+                <!-- The version and copyright, last in App settings: 28dp below, as between settings, centred, in
+                     grey. -->
+                <TextView
+                    android:id="@+id/copyright"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="28dp"
+                    android:gravity="center_horizontal"
+                    android:textColor="@color/text2"
+                    android:textSize="15sp" />
             </LinearLayout>
         </LinearLayout>
-
-        <!-- Pushes the copyright to the bottom when the cards don't fill the screen. -->
-        <View
-            android:layout_width="match_parent"
-            android:layout_height="0dp"
-            android:layout_weight="1" />
-
-        <TextView
-            android:id="@+id/copyright"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
-            android:gravity="center_horizontal"
-            android:textColor="@color/text2"
-            android:textSize="15sp" />
     </LinearLayout>
     </ScrollView>
 
