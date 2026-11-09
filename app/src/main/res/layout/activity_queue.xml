@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- The room's queue: the Queue card with Clear queue, the tracks, and the mini player.
+<!-- The room's queue: ‹ back to Now Playing, the Queue card with Clear queue, and the tracks. The mini player's views
+     are here for the player, which marks the playing track and follows the speakers, but stay hidden (Player.bar).
      fitsSystemWindows replaces the root's padding with the bar insets, so the spacing is in margins. -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
@@ -7,12 +8,25 @@
     android:fitsSystemWindows="true"
     android:orientation="vertical">
 
+    <!-- Back to Now Playing, as Back does; on the row Now Playing's ⌄ has, 8dp from the top, the card 8dp under it.
+         The ‹ starts on the cards' content line, 36dp in, by what it draws: 8dp inside its 24dp, centred in 56dp. -->
+    <ImageView
+        android:id="@+id/back"
+        android:layout_width="56dp"
+        android:layout_height="40dp"
+        android:layout_marginStart="12dp"
+        android:layout_marginTop="8dp"
+        android:background="@drawable/control"
+        android:contentDescription="@string/back"
+        android:scaleType="center"
+        android:src="@drawable/ic_back" />
+
     <!-- The title row reaches into the card's padding, as Browse's: Clear queue's text ends on the card's content edge,
          where the mini player's Play circle ends. The padding unclipped, so the link's ripple shows whole. -->
     <LinearLayout
         style="@style/Card"
         android:layout_marginHorizontal="16dp"
-        android:layout_marginTop="16dp"
+        android:layout_marginTop="8dp"
         android:clipToPadding="false">
 
         <LinearLayout

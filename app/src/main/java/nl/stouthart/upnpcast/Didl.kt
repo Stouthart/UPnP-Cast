@@ -207,8 +207,8 @@ object Didl {
 
     /**
      * The Sonos favourites (FV:2) from the player at [control]: each by its title and its service ("90s90s Radio") as
-     * the artist. The cover is the favourite's, on the player or on a server this app knows (a server track's); else the
-     * player's copy for the favourite's link.
+     * the artist. The cover is the favourite's, on the player, on another of the household's players (a Music library
+     * track saved there), or on a server this app knows (a server track's); else the player's copy for the favourite's link.
      */
     fun favorites(xml: String, control: String): List<Entry> {
         if (xml.isBlank()) return emptyList()
@@ -252,9 +252,10 @@ object Didl {
         return out
     }
 
-    /** [u] on the player at [base], or an http link on a server the main screen found. */
+    /** [u] on the player at [base], or an http link on another Sonos player or a server the main screen found. */
     private fun cover(base: URL, u: String) = player(base, u)
-        ?: runCatching { URL(u) }.getOrNull()?.takeIf { it.protocol == "http" && it.host in Player.servers }?.toString()
+        ?: runCatching { URL(u) }.getOrNull()?.takeIf { it.protocol == "http" && (it.host in Player.servers || it.host in Player.players) }
+            ?.toString()
 
     private fun local(host: String, url: String): String? = if (url.isEmpty()) null
     else runCatching { URL(url) }.getOrNull()?.takeIf { it.protocol == "http" && it.host == host }?.toString()

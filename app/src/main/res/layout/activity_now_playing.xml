@@ -257,8 +257,8 @@
         </LinearLayout>
 
         <!-- The room's row, on a panel where the Queue button was, 56dp as the controls' row: the Queue at the left, the
-             room in the middle, and at the right the heart that saves what plays as a Sonos favourite, filled while it is
-             one. Their glyphs at 28dp, as Shuffle's and Repeat's, in the middle of a 48dp touch area; each ends on its
+             room in the middle, and at the right the heart that saves what plays as a Sonos favourite, filled in blue while
+             it is one. Their glyphs at 28dp, as Shuffle's and Repeat's, in the middle of a 48dp touch area; each ends on its
              36dp line, 16dp inside the panel, by what it draws: the queue's 3.5dp and the heart's 2.33dp inside its box.
              The queue's glyph sits 1.17dp low in its box: its padding lifts it, so both glyphs share the panel's middle
              while their touch areas stay centred. -->

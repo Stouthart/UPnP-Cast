@@ -481,6 +481,9 @@ object Sonos {
     /** A Play now, Replace queue or favourite for [r], asked for now: its turn, for play() or favorite(). */
     fun turn(r: Room): Int = fill(r).turn.incrementAndGet()
 
+    /** Whether [turn] is still [r]'s latest: none asked for since. */
+    fun latest(r: Room, turn: Int): Boolean = fill(r).turn.get() == turn
+
     /**
      * Puts [tracks] in [r]'s queue as [how] says; for [How.NOW] and [How.REPLACE] it plays from the track at index
      * [start] of [tracks] as soon as the batch holding it is in, [started] then, and the rest go in while it plays:

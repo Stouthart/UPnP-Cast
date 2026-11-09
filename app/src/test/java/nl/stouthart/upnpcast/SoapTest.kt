@@ -1,5 +1,6 @@
 package nl.stouthart.upnpcast
 
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -39,6 +40,19 @@ class SoapTest {
         no(envelope("<u:PlayResponse $avt></u:PlayResponse>"), "SetAVTransportURI") // Another action's.
         no(envelope("<u:DisplayResponse $avt></u:DisplayResponse>"), "Play") // Only ends the same.
         no(envelope("<u:PlayResponse xmlns:u=\"urn:schemas-upnp-org:service:RenderingControl:1\"/>"), "Play") // Another service's.
+        // The service's name with no version, or one that isn't a number.
+        no(envelope("<u:PlayResponse xmlns:u=\"urn:schemas-upnp-org:service:AVTransport:\"/>"), "Play")
+        no(envelope("<u:PlayResponse xmlns:u=\"urn:schemas-upnp-org:service:AVTransport:nonsense\"/>"), "Play")
+    }
+
+    @Test
+    fun errorCodes() {
+        fun fault(code: String) = envelope("<s:Fault><faultcode>s:Client</faultcode><faultstring>UPnPError</faultstring><detail>$code</detail></s:Fault>")
+        // Plain, or with a prefix as some devices send it: the special cases (1028 queue changed, 803 already a favourite) still count.
+        assertEquals(714, Http.upnpError(fault("<UPnPError xmlns=\"urn:schemas-upnp-org:control-1-0\"><errorCode>714</errorCode></UPnPError>")))
+        assertEquals(1028, Http.upnpError(fault("<u:UPnPError xmlns:u=\"urn:schemas-upnp-org:control-1-0\"><u:errorCode>1028</u:errorCode></u:UPnPError>")))
+        assertEquals(0, Http.upnpError(fault("<UPnPError/>")))
+        assertEquals(0, Http.upnpError("not xml".toByteArray()))
     }
 
     @Test

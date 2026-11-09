@@ -79,8 +79,10 @@ object Http {
                     body = p.name == "Body" && p.namespace == envelope
                 }
                 3 -> if (body) {
+                    // In the service's namespace, any version of it (a number), or in none, as some devices answer.
                     val ns = p.namespace
-                    require(!answer && p.name == "${action}Response" && (type == null || ns.isEmpty() || ns.startsWith(type)))
+                    require(!answer && p.name == "${action}Response" && (type == null || ns.isEmpty() ||
+                        ns.startsWith(type) && ns.removePrefix(type).let { v -> v.isNotEmpty() && v.all { it in '0'..'9' } }))
                     answer = true
                 }
             }
@@ -186,11 +188,16 @@ object Http {
         }
     }
 
-    private fun upnpError(b: ByteArray): Int {
-        val s = String(b)
-        val i = s.indexOf("<errorCode>")
-        if (i < 0) return 0
-        val end = s.indexOf('<', i + 11)
-        return if (end < 0) 0 else s.substring(i + 11, end).trim().toIntOrNull() ?: 0
-    }
+    /**
+     * A SOAP fault's UPnP errorCode, with any prefix (<u:errorCode>, as 1028 or 803 may come), or 0. Namespace-aware, by
+     * the factory's parser as acknowledges(), so it reads on the computer too.
+     */
+    internal fun upnpError(b: ByteArray): Int = runCatching {
+        val p = XmlPullParserFactory.newInstance().apply { isNamespaceAware = true }.newPullParser()
+        p.setInput(noDtd(b).inputStream(), null)
+        while (p.next() != XmlPullParser.END_DOCUMENT) {
+            if (p.eventType == XmlPullParser.START_TAG && p.name == "errorCode") return@runCatching p.nextText().trim().toIntOrNull() ?: 0
+        }
+        0
+    }.getOrDefault(0)
 }

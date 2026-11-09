@@ -82,6 +82,7 @@
     <string name="clear_queue">Clear queue</string>
     <string name="current_track">Current track</string> <!-- TalkBack's word for the queue's playing row. -->
     <string name="clear_message">Are you sure you want to remove all tracks in the queue? The playback will stop.</string>
+    <string name="clear_message_other">Are you sure you want to remove all tracks in the queue?</string>
     <string name="clear_all">Clear all</string>
     <string name="clear_error">Unable to clear queue.</string>
     <string name="remove_track">Remove from queue</string>
@@ -93,6 +94,7 @@
     <string name="unfavorite_error">Unable to remove from Favorites.</string>
     <string name="cancel">Cancel</string>
     <string name="close">Close</string>
+    <string name="back">Back</string>
     <string name="cant_play">Couldn\'t play %1$s.</string>
     <string name="queue_partly">Unable to add to queue.</string>
     <string name="queue_changed">The queue kept changing while it loaded. Open it again.</string>

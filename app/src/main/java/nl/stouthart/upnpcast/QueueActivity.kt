@@ -39,6 +39,7 @@ class QueueActivity : Activity() {
     private var items: List<Entry> = emptyList()
     private var length = 0 // The queue's tracks, as the speaker counts them: more than the rows while pages come in.
     private var current = -1 // The playing track's row, or -1 while the room plays something else.
+    private var playsQueue = false // The room plays its queue, as last heard: only then does Clear queue stop the music.
     private var rows: Room? = null // The group whose queue the rows show, once loaded; null while none is.
     private var started = false // Between onStart and onStop: a jump or clear that ends later doesn't load again.
     @Volatile
@@ -87,20 +88,27 @@ class QueueActivity : Activity() {
         }
         player = Player(this).apply {
             hosts += Player.hosts(intent)
+            bar = false // No mini player here, as in the Mac app; the player still marks the track and follows the speakers.
             media = true
             onOpen = { finish() } // Now Playing opened this screen: back to it, rather than a second copy.
-            onPosition = { p, queued -> mark(if (queued) p.index - 1 else -1) }
+            onPosition = { p, queued ->
+                playsQueue = queued
+                mark(if (queued) p.index - 1 else -1)
+            }
             onNetwork = { if (Lan.wifi != null) load() }
             onRegroup = { load() } // Another coordinator, another queue.
             this.room = room
         }
+        findViewById<View>(R.id.back).setOnClickListener { finish() } // Back to Now Playing, which opened this screen.
         list.adapter = adapter
         list.setOnItemClickListener { _, _, n, _ -> jump(n) }
         clear.setOnClickListener {
             val shown = rows ?: return@setOnClickListener // The group whose queue the list shows.
             AlertDialog.Builder(this)
                 .setTitle(R.string.clear_queue)
-                .setMessage(R.string.clear_message)
+                // "The playback will stop" only while the room plays its queue: a favourite played on its own, a
+                // radio station or the TV plays on.
+                .setMessage(if (playsQueue) R.string.clear_message else R.string.clear_message_other)
                 // Only that group's: the speakers may have been regrouped meanwhile, and the list then reloads.
                 .setPositiveButton(R.string.clear_all) { _, _ -> if (shown.same(player.room)) clear(shown) }
                 .setNegativeButton(R.string.cancel, null)

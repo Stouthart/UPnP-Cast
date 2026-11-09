@@ -86,6 +86,9 @@ class Player(private val a: Activity) {
         /** The UPnP servers' names by address, as the main screen found them: Now Playing's source for their tracks. */
         val servers: MutableMap<String, String> = ConcurrentHashMap()
 
+        /** The Sonos players' addresses, as the household lists them: a favourite's cover may be on any of them. */
+        val players: MutableSet<String> = ConcurrentHashMap.newKeySet()
+
         // What a player showed last, main thread only: the next screen's player on the same room starts from it, so
         // its cover, title and volume are there at once rather than after its first questions to the room.
         private var last: Last? = null
@@ -137,6 +140,17 @@ class Player(private val a: Activity) {
     /** Also asks whether the room plays its queue, with the other slow values: for the Queue screen. */
     @Volatile
     var media = false
+
+    /**
+     * Whether the screen shows the mini player. The Queue doesn't, as in the Mac app: its ‹ goes back to Now Playing,
+     * which has the controls. It keeps the player all the same, for the playing track's mark, a regrouping and the
+     * volume buttons.
+     */
+    var bar = true
+        set(value) {
+            field = value
+            place()
+        }
 
     // Play state and position change all the time; volume, mute, play mode and the queue check only when someone
     // changes them. So those are asked every SLOW-th poll, and at once when [fresh]: after a change made here.
@@ -467,7 +481,7 @@ class Player(private val a: Activity) {
 
     /**
      * The mini player's title, when it's too long for its row: after a moment it slides to its end, waits, and slides
-     * back, its edges fading meanwhile; then it ends in "…" again. Once per title, and again as the screen shows. Not
+     * back as fast, its edges fading meanwhile; then it ends in "…" again. Once per title, and again as the screen shows. Not
      * with Android's animations off, as by Remove animations, nor for right-to-left text.
      */
     private fun glide() {
@@ -483,7 +497,7 @@ class Player(private val a: Activity) {
             if (room <= 0 || dx <= 0 || title.layout?.getParagraphDirection(0) != Layout.DIR_LEFT_TO_RIGHT) return@post
             val ms = (dx * 1000 / (GLIDE_DP_S * a.resources.displayMetrics.density)).toLong()
             val there = ValueAnimator.ofInt(0, dx).setDuration(ms).apply { startDelay = GLIDE_WAIT_MS }
-            val back = ValueAnimator.ofInt(dx, 0).setDuration(ms / 2).apply { startDelay = GLIDE_WAIT_MS }
+            val back = ValueAnimator.ofInt(dx, 0).setDuration(ms).apply { startDelay = GLIDE_WAIT_MS } // Back as fast as there.
             for (v in listOf(there, back)) v.addUpdateListener {
                 // Its first frame: the whole title on one line, clipped at the edges, not "…". In code: Android turns
                 // a layout's scrollHorizontally off again for a view with maxLines.
@@ -554,7 +568,7 @@ class Player(private val a: Activity) {
             else -> return false
         }
         if (e.action != KeyEvent.ACTION_DOWN) return keyed
-        keyed = room != null && Lan.wifi != null && heard && (full || view.visibility == View.VISIBLE)
+        keyed = room != null && Lan.wifi != null && heard && (full || view.visibility == View.VISIBLE || !bar && seen)
         if (!keyed) return false
         val step = Prefs.step(a)
         val v = (volume.progress + if (up) step else -step).coerceIn(0, 100)
@@ -732,7 +746,7 @@ class Player(private val a: Activity) {
     private fun match(favorites: List<Entry>, key: String) =
         favorites.firstOrNull { it.fav?.uri?.isNotEmpty() == true && Favorites.key(it.fav.uri) == key }?.id
 
-    /** Filled in the text's colour while what plays is a favourite, as a room's ✓; grey and outlined while it isn't. */
+    /** Filled in blue while what plays is a favourite, as Shuffle and Repeat while on; grey and outlined while it isn't. */
     private fun drawHeart() {
         val on = heartId != null
         heart?.setImageResource(if (on) R.drawable.ic_heart_on else R.drawable.ic_heart)
@@ -764,11 +778,12 @@ class Player(private val a: Activity) {
 
     /**
      * The mini player shows from the first time the room has anything loaded, and stays, whatever plays or not. It
-     * hides only with nothing to control: without WiFi, or without a Sonos room. Now Playing closes instead.
+     * hides only with nothing to control: without WiFi, or without a Sonos room; and on a screen without it ([bar]).
+     * Now Playing closes instead.
      */
     private fun place() {
         if (full) return
-        val on = seen && room != null && Lan.wifi != null
+        val on = bar && seen && room != null && Lan.wifi != null
         val now = if (on) View.VISIBLE else View.GONE
         if (view.visibility == now) return
         view.visibility = now

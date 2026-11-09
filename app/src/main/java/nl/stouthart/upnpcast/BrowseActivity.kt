@@ -347,16 +347,22 @@ class BrowseActivity : Activity() {
                 if (!e.container) send(listOf(e), ways[m.itemId], 0, e.title)
                 else {
                     // The group chosen for, while the album's tracks load: regrouped meanwhile, Replace queue would
-                    // empty another group's queue, so then nothing goes.
+                    // empty another group's queue, so then nothing goes. A Play now or Replace queue takes its turn now,
+                    // as it's asked for: a newer one, or a favourite, while the tracks load wins, and this one then
+                    // neither empties the queue nor plays, nor fetches more pages.
                     val target = player.room
+                    val how = ways[m.itemId]
+                    val turn = target?.takeIf { how == How.NOW || how == How.REPLACE }?.let(Sonos::turn) ?: 0
+                    val current = { target == null || turn == 0 || Sonos.latest(target, turn) }
                     later(pool) {
-                        val tracks = runCatching { Upnp.tracks(server, e.id, MAX_QUEUE) }.getOrNull()
+                        val tracks = runCatching { Upnp.tracks(server, e.id, MAX_QUEUE) { !isDestroyed && current() } }.getOrNull()
                         runOnUiThread {
                             if (isDestroyed) return@runOnUiThread // Left while the album's tracks loaded.
                             when {
+                                !current() -> Unit // Overtaken by a newer Play now, Replace queue or favourite.
                                 tracks.isNullOrEmpty() -> toast(getString(R.string.cant_play, e.title))
                                 !target.same(player.room) -> toast(getString(R.string.regrouped))
-                                else -> send(tracks, ways[m.itemId], 0, e.title)
+                                else -> command(e.title) { r -> send(r, tracks, how, 0, turn) }
                             }
                         }
                     }

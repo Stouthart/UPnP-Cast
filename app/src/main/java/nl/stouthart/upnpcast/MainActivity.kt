@@ -393,6 +393,7 @@ class MainActivity : Activity() {
     private fun place(t: Upnp.Topology) {
         household = t
         found = t.rooms
+        for (x in t.rooms) Player.players += x.own.substringBeforeLast(':')
         rooms.removeAllViews()
         // Each room by its main player's kind and model, known from the last start; a new room shows a speaker and its
         // address alone until read. The address is the room's own player's.

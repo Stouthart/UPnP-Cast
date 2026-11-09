@@ -1,8 +1,16 @@
-<!-- 2.2 - Copyright (C) 2026 Stouthart. All rights reserved. -->
+<!-- 2.3 - Copyright (C) 2026 Stouthart. All rights reserved. -->
 
 # Release notes
 
-Highlights per version, newest first, with 1.x condensed. 2.2 is the version distributed; the entries below it show how the app got there.
+Highlights per version, newest first, with 1.x condensed. 2.3 is the version distributed; the entries below it show how the app got there.
+
+## 2.3 - November 2026
+
+- **Back from the Queue:** a **‹** at its top left goes back to Now Playing, as Back does. The Queue no longer shows the mini player, so its list runs to the foot of the screen; the volume buttons still set the room's volume there. **Clear queue** says the music will stop only while the room plays its queue: a favourite played on its own, a radio station or the TV plays on.
+- **The mini player apart:** a stronger grey edge sets it apart from the cards above it, also when one scrolls right up to it. A title too long for it slides back as fast as it went, where it went back twice as fast.
+- **A blue heart:** while what plays is a favourite, the heart on Now Playing is filled in blue, as Shuffle and Repeat light up, where it was in the text's colour.
+- **Covers of favourites:** a Music library track saved as a favourite on another speaker shows its cover too.
+- **Sturdier:** an album's **Play now** or **Replace queue** takes its turn as it's chosen: something played while its tracks load, as a favourite, now wins, where the album could still empty the queue after it; an album overtaken that way also stops loading its tracks. A speaker's error that comes with a prefix, as some send it, is read as such, so a queue that changed meanwhile or a favourite saved already is still handled as one. A reply in a service's namespace with a version that isn't a number no longer counts as an answer.
 
 ## 2.2 - November 2026
 

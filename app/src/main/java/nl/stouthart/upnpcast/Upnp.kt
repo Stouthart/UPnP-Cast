@@ -217,13 +217,13 @@ object Upnp {
     }
 
     /** A container's playable tracks over all its pages, up to [max]: what a menu on an album queues. */
-    fun tracks(s: Server, id: String, max: Int): List<Entry> {
+    fun tracks(s: Server, id: String, max: Int, wanted: () -> Boolean = { true }): List<Entry> {
         val out = ArrayList<Entry>()
         var start = 0
         var pages = 0
         // Bounded by pages too, and only forward: a server can't keep it going with pages of nothing playable, or
         // send it back with a negative count.
-        while (out.size < max && pages++ < MAX_PAGES) {
+        while (out.size < max && pages++ < MAX_PAGES && wanted()) { // Only while it's still wanted, as Sonos.pages.
             val p = browse(s, id, start, 200)
             p.entries.filterTo(out) { !it.container && it.playable }
             if (p.returned <= 0) break
