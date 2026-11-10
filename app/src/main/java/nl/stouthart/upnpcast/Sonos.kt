@@ -604,11 +604,14 @@ object Sonos {
         avt(r, "Play", "<Speed>1</Speed>")
     }
 
-    /** Empties [r]'s queue; a fill still going stops first, rather than filling it again. */
-    fun clear(r: Room) {
+    /**
+     * Empties [r]'s queue; a fill still going stops first, rather than filling it again. Only while [turn] (see turn(),
+     * else taken now) is the room's latest: a play asked for since keeps what it queued.
+     */
+    fun clear(r: Room, turn: Int = 0) {
         val fill = fill(r)
-        fill.turn.incrementAndGet()
-        synchronized(fill.lock) { avt(r, "RemoveAllTracksFromQueue") }
+        val mine = if (turn > 0) turn else fill.turn.incrementAndGet()
+        synchronized(fill.lock) { if (fill.turn.get() == mine) avt(r, "RemoveAllTracksFromQueue") }
     }
 
     /**

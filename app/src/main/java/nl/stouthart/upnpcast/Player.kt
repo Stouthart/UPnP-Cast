@@ -38,6 +38,10 @@ private const val HOSTS = "hosts"
 private const val META_AGAIN_MS = 60_000L // After a failed read of a station or of the speakers' music services.
 private const val GLIDE_DP_S = 30f // The mini player's title slides at the speed of Android's own scrolling text.
 private const val GLIDE_WAIT_MS = 1200L // Before it slides, as Android's does; and a pause at its end, then back.
+// Now Playing's controls stand at most this far apart, by what they draw: on a wide screen, as a tablet's, the row stays
+// together in the middle rather than spreading to the edges. A phone's gaps are smaller (26dp with five on the S25).
+// The same in the Mac app. The progress bar and the volume keep the full width.
+private const val MAX_GAP_DP = 32f
 
 /**
  * The room's track and controls: the mini player at the foot of a screen, or all of Now Playing when the layout has a
@@ -68,11 +72,6 @@ class Player(private val a: Activity) {
 
         /** Hands the cover [hosts] alone to the next screen's player, as the main screen's to Browse. */
         fun hosts(i: Intent, hosts: Set<String>): Intent = i.putExtra(HOSTS, hosts.toTypedArray())
-
-        // Once the room has had anything loaded (a track, playing or paused, or a source such as the TV), the mini
-        // player shows on every screen and stays, for the rest of the session.
-        @Volatile
-        private var seen = false
 
         // The speakers' list of music services, read at most once a run unless it failed: kept in Prefs, and read again
         // only for a service it hadn't, as one added since.
@@ -123,6 +122,8 @@ class Player(private val a: Activity) {
             sending = false
             skips = 0
             quiet = 0L
+            playSent.out = 0
+            muteSent.out = 0
             level.text = ""
             heard = false
             grouping = null
@@ -134,8 +135,11 @@ class Player(private val a: Activity) {
     /** Runs after the player followed the speakers to a new group, with the household as it is now. */
     var onRegroup: ((Upnp.Topology) -> Unit)? = null
 
-    /** Each answer, on the main thread, with whether the room plays its queue (only known when [media] is set). */
-    var onPosition: ((Position, Boolean) -> Unit)? = null
+    /**
+     * Each answer, on the main thread, with whether the room plays its queue (only known when [media] is set), and the
+     * uptime it was read.
+     */
+    var onPosition: ((Position, Boolean, Long) -> Unit)? = null
 
     /** Also asks whether the room plays its queue, with the other slow values: for the Queue screen. */
     @Volatile
@@ -150,6 +154,7 @@ class Player(private val a: Activity) {
         set(value) {
             field = value
             place()
+            if (value && live) retick() // Shown again: the clock shows and ticks on from where it is.
         }
 
     // Play state and position change all the time; volume, mute, play mode and the queue check only when someone
@@ -201,6 +206,10 @@ class Player(private val a: Activity) {
     private val heart: ImageView? = a.findViewById(R.id.player_heart)
     private val roomName: TextView? = a.findViewById(R.id.player_room) // Now Playing's, in a row of its own.
     private val full = progress != null
+    // The mini player's progress, a ring in its Play/Pause circle; Now Playing has its bar.
+    private val ring: Ring? = if (full) null else {
+        Ring(a.resources.displayMetrics.density, a.getColor(R.color.ring)).also { toggle.foreground = it }
+    }
 
     // The heart: what plays now as a favourite (see Favorites), by its key, its DIDL to save it, and the favourite's id
     // while it is one: null when it isn't, "" while a save is on its way. Main thread only.
@@ -241,6 +250,17 @@ class Player(private val a: Activity) {
     private var skips = 0 // Quick skip seconds tapped while one is out: they go as one once it's back.
     private var skipping = false
     private var keyed = false // The last volume button press went to the room, so its release does too.
+    // Changes sent here that show at once, Play/Pause and mute: an answer read before one landed would flip it back for
+    // a moment, as a poll already out when it was pressed. As in the Mac app.
+    private class Pending {
+        var out = 0
+        var landed = 0L // The uptime the last one came back.
+
+        fun calm(at: Long) = out == 0 && at > landed
+    }
+
+    private val playSent = Pending()
+    private val muteSent = Pending()
 
     // This room's volume was read since the room or the screen came: what another screen showed may be old, and the
     // volume buttons set an absolute level from it.
@@ -248,12 +268,14 @@ class Player(private val a: Activity) {
 
     init {
         toggle.setOnClickListener {
-            show(playing != true) // At once; the poll that follows confirms it.
-            command(Sonos::toggle)
+            if (room == null) return@setOnClickListener
+            show(playing != true) // At once; the answers read after it landed confirm it.
+            command(playSent, Sonos::toggle)
         }
         mute.setOnClickListener {
-            muted(muted != true)
-            command(Sonos::toggleMute)
+            if (room == null) return@setOnClickListener
+            muted(muted != true) // The same.
+            command(muteSent, Sonos::toggleMute)
         }
         volume.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(s: SeekBar, v: Int, user: Boolean) {
@@ -271,7 +293,7 @@ class Player(private val a: Activity) {
             }
         })
         if (!full) view.setOnClickListener { onOpen() }
-        a.findViewById<View?>(R.id.player_previous)?.setOnClickListener { command(Sonos::previous) }
+        a.findViewById<View?>(R.id.player_previous)?.setOnClickListener { previous() }
         a.findViewById<View?>(R.id.player_next)?.setOnClickListener { command(Sonos::next) }
         a.findViewById<View?>(R.id.player_queue)?.setOnClickListener { open(QueueActivity::class.java) }
         heart?.setOnClickListener { toggleHeart() }
@@ -347,7 +369,7 @@ class Player(private val a: Activity) {
             sum += drawn[i]
             n++
         }
-        val gap = ((bar.width / d - sum) / n).coerceAtLeast(0f)
+        val gap = ((bar.width / d - sum) / n).coerceIn(0f, MAX_GAP_DP) // The row is centred: what's left goes to its sides.
         for (i in 0 until bar.childCount) {
             val v = bar.getChildAt(i)
             if (v.visibility != View.VISIBLE) continue
@@ -357,6 +379,21 @@ class Player(private val a: Activity) {
             }
             if (v is ImageView) v.setPadding(0, v.paddingTop, 0, v.paddingBottom)
         }
+    }
+
+    /**
+     * Previous: the track's start, or the track before, which starts there too. The clock goes to 0:00 at once, as for a
+     * seek: the answer right after it may still say the old place, or that the speaker buffers, which holds the clock,
+     * and the next comes a whole Polling interval later. Not for what has no length: it gets Previous as it is.
+     */
+    private fun previous() {
+        if (length > 0) {
+            base = 0
+            at = SystemClock.uptimeMillis()
+            settle = at + SETTLE_MS
+            retick()
+        }
+        command(Sonos::previous)
     }
 
     private fun seek(to: Int) {
@@ -437,6 +474,8 @@ class Player(private val a: Activity) {
         sending = false
         skips = 0
         skipping = false
+        playSent.out = 0
+        muteSent.out = 0
         exec?.shutdownNow()
         exec = null
         volumes?.shutdownNow()
@@ -459,11 +498,14 @@ class Player(private val a: Activity) {
     private var settle = 0L // Until then (uptime), a seek is landing.
     private val tick = object : Runnable {
         override fun run() {
+            // Nothing to show on a screen without the mini player, as the Queue: its polls and volume buttons go on.
+            if (!full && !bar) return
             val ms = if (running) base + (SystemClock.uptimeMillis() - at) else base
             if (!seeking) {
                 val e = minOf(length.toLong(), ms / 1000).toInt()
                 progress?.progress = e
                 times(e, length)
+                ring?.set(e, length)
             }
             if (running && length > 0) ui.postDelayed(this, 1000 - ms % 1000) // Right when the next second starts.
         }
@@ -539,6 +581,24 @@ class Player(private val a: Activity) {
         runCatching { exec?.execute(work) } // Refused once stopped: nothing to show then.
     }
 
+    /** [work] as command() runs it, followed by [p]: the answers read before it's back don't show (see Pending). */
+    private fun command(p: Pending, work: (Room) -> Unit) {
+        p.out++
+        val g = gen
+        command { r ->
+            try {
+                work(r)
+            } finally {
+                val t = SystemClock.uptimeMillis() // Here, before the poll that follows it on this thread.
+                a.runOnUiThread {
+                    if (g != gen) return@runOnUiThread // A room switch or stop() has reset it meanwhile.
+                    p.out--
+                    p.landed = t
+                }
+            }
+        }
+    }
+
     /** Runs [work] on the room, then asks again so the screen follows; only a failure shows. */
     private fun command(work: (Room) -> Unit) {
         val r = room ?: return
@@ -568,7 +628,7 @@ class Player(private val a: Activity) {
             else -> return false
         }
         if (e.action != KeyEvent.ACTION_DOWN) return keyed
-        keyed = room != null && Lan.wifi != null && heard && (full || view.visibility == View.VISIBLE || !bar && seen)
+        keyed = room != null && Lan.wifi != null && heard && (full || view.visibility == View.VISIBLE || !bar)
         if (!keyed) return false
         val step = Prefs.step(a)
         val v = (volume.progress + if (up) step else -step).coerceIn(0, 100)
@@ -777,13 +837,13 @@ class Player(private val a: Activity) {
     }
 
     /**
-     * The mini player shows from the first time the room has anything loaded, and stays, whatever plays or not. It
-     * hides only with nothing to control: without WiFi, or without a Sonos room; and on a screen without it ([bar]).
-     * Now Playing closes instead.
+     * The mini player shows whenever there's a room to control, whatever plays or not, No content too: it doesn't come
+     * and go with what played before, as in the Mac app. It hides only with nothing to control: without WiFi, or
+     * without a Sonos room; and on a screen without it ([bar]). Now Playing closes instead.
      */
     private fun place() {
         if (full) return
-        val on = bar && seen && room != null && Lan.wifi != null
+        val on = bar && room != null && Lan.wifi != null
         val now = if (on) View.VISIBLE else View.GONE
         if (view.visibility == now) return
         view.visibility = now
@@ -840,11 +900,11 @@ class Player(private val a: Activity) {
         if (answer != null) remember(r, answer)
         val t = answer?.track
         val plays = answer != null && (answer.state == "PLAYING" || answer.state == "TRANSITIONING")
-        if (answer != null && (plays || answer.pos.uri.isNotEmpty())) seen = true
         place()
         if (answer != null) {
-            show(plays)
-            answer.muted?.let { muted(it) }
+            // Not from a reading taken before a Play/Pause or mute sent here landed: it would flip back for a moment.
+            if (playSent.calm(answer.at)) show(plays)
+            if (muteSent.calm(answer.at)) answer.muted?.let { muted(it) }
             answer.queued?.let { queued = it }
         }
         val st = answer?.station
@@ -906,34 +966,48 @@ class Player(private val a: Activity) {
         if (level.text.isEmpty() && v >= 0) level.text = v.toString()
         if (v >= 0 && !seeded) heard = true // Read from the room itself: the volume buttons may go from it.
 
-        progress?.let {
+        // The clock, for Now Playing's bar and times and the mini player's ring.
+        run {
             val p = answer.pos
-            if (seeking) return@let
+            if (seeking) return@run
             val reported = p.elapsed * 1000L
             val ms = if (running) base + (answer.at - at) else base // The clock, when the position arrived.
             // The speaker rounds down: anywhere in the reported second, plus the reply's trip, the clock is right.
             val top = reported + 1000 + SLACK_MS
             val near = p.duration == length && ms >= reported - 1500 && ms <= top + 1500
-            if (!near && answer.at < settle) return@let // A seek landing: 0, the old place, or no length for a moment.
+            // A seek landing: 0, the old place, or no length for a moment. Another track, by a length of its own, isn't.
+            val other = p.duration > 0 && p.duration != length
+            if (!near && !other && answer.at < settle) return@run
             if (near) settle = 0
             if (answer.state == "TRANSITIONING") { // Buffering: the clock waits where it is, whatever the speaker says.
-                if (running) {
+                if (p.duration != length) {
+                    // Unless it's another track, or a stream, as a radio station starting: its own length at once,
+                    // waiting at its own place, rather than the old track's progress until it plays.
+                    base = reported
+                    at = answer.at
+                    running = false
+                    length = p.duration
+                    progress?.isEnabled = p.duration > 0
+                    progress?.max = maxOf(p.duration, 1)
+                    skippable(p.duration > 0)
+                    retick()
+                } else if (running) {
                     base = ms
                     at = answer.at
                     running = false
                     retick()
                 }
-                return@let
+                return@run
             }
-            it.isEnabled = p.duration > 0
-            skippable(it.isEnabled)
-            it.max = maxOf(p.duration, 1)
+            progress?.isEnabled = p.duration > 0
+            progress?.max = maxOf(p.duration, 1)
+            skippable(p.duration > 0)
             val play = answer.state == "PLAYING"
             val to = when {
                 play != running || !near -> reported + 500 // Another track, a seek, play or pause: that second's middle.
                 ms < reported -> reported // Behind: just catches up.
                 ms > top -> reported + 999 // Ahead: just falls back into that second.
-                else -> return@let
+                else -> return@run
             }
             base = to
             at = answer.at
@@ -950,7 +1024,7 @@ class Player(private val a: Activity) {
                 tint(it, m.repeat != Repeat.OFF)
             }
         }
-        onPosition?.invoke(answer.pos, queued)
+        onPosition?.invoke(answer.pos, queued, answer.at)
     }
 
     /**

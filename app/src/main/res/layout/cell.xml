@@ -4,8 +4,8 @@
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:background="@drawable/panel"
-    android:foreground="@drawable/press"
+    android:background="@drawable/panel_large"
+    android:foreground="@drawable/press_large"
     android:orientation="vertical"
     android:outlineProvider="none"
     android:padding="10dp">

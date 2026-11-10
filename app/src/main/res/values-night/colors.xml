@@ -15,4 +15,5 @@
     <color name="warning">#FFF48771</color>
     <color name="success">#FF73C991</color>
     <color name="player_edge">#FF474748</color>
+    <color name="ring">#FFFFFFFF</color>
 </resources>

@@ -1,8 +1,17 @@
-<!-- 2.3 - Copyright (C) 2026 Stouthart. All rights reserved. -->
+<!-- 2.4 - Copyright (C) 2026 Stouthart. All rights reserved. -->
 
 # Release notes
 
-Highlights per version, newest first, with 1.x condensed. 2.3 is the version distributed; the entries below it show how the app got there.
+Highlights per version, newest first, with 1.x condensed. 2.4 is the version distributed; the entries below it show how the app got there.
+
+## 2.4 - November 2026
+
+- **Progress in the mini player:** the edge of the Play/Pause circle fills clockwise from the top as the track plays, white in dark mode and grey in light mode. A radio stream or the TV, which have no length, show none. Switching to a station clears it at once, and Now Playing's bar greys out at once, where both kept the track's progress until the station played.
+- **The mini player stays:** it shows whenever there's a room to control, also with nothing loaded, as **No content**. It waited for the room's first item and then stayed for the rest of the session, so whether it showed depended on what had played before.
+- **Controls together on a tablet:** Now Playing's controls stand at most 32dp apart, in the middle, where on a wide screen they spread to its edges; the progress bar and the volume keep the full width. A phone's stay as they were.
+- **Previous at once:** the time goes to 0:00 as soon as Previous is tapped, as for a seek; it could wait for the next poll, up to the Polling interval later, while the speaker still reported the old place.
+- **No flicker:** Play/Pause and mute no longer flip back for a moment when a poll already under way brings the old state, and the Queue's playing track no longer jumps back after a tap or a **✕**. Several **✕** in a row no longer bring a row back for a moment: the list is read again once the last of them is done.
+- **Sturdier:** **Clear queue** takes its turn as it's confirmed: something played since, also from another screen, wins, where a clear that came later could empty it. Before a tap or a **✕** in the Queue, the track at that place is checked by its link as well as its title, artist and album. The Queue no longer keeps the hidden mini player's clock ticking. TalkBack names Now Playing's progress bar **Position**.
 
 ## 2.3 - November 2026
 

@@ -72,6 +72,7 @@
     <string name="play">Play</string>
     <string name="pause">Pause</string>
     <string name="volume">Volume</string>
+    <string name="position">Position</string> <!-- Now Playing's progress bar, for TalkBack. -->
     <string name="mute">Mute</string>
     <string name="unmute">Unmute</string>
     <string name="previous">Previous</string>

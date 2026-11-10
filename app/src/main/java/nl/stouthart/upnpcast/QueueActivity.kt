@@ -3,6 +3,7 @@ package nl.stouthart.upnpcast
 import android.app.Activity
 import android.app.AlertDialog
 import android.os.Bundle
+import android.os.SystemClock
 import android.util.Log
 import android.view.KeyEvent
 import android.view.View
@@ -41,6 +42,11 @@ class QueueActivity : Activity() {
     private var current = -1 // The playing track's row, or -1 while the room plays something else.
     private var playsQueue = false // The room plays its queue, as last heard: only then does Clear queue stop the music.
     private var rows: Room? = null // The group whose queue the rows show, once loaded; null while none is.
+    // Jumps and ✕ on their way, and the uptime the last one landed: the playing track's mark is theirs meanwhile, as an
+    // answer read before would move it back for a moment. As in the Mac app.
+    private var marking = 0
+    private var marked = 0L
+    private var reload = false // One of them wants the list read again, once the last of them is back.
     private var started = false // Between onStart and onStop: a jump or clear that ends later doesn't load again.
     @Volatile
     private var gen = 0 // Drops a load that a newer one, or onStop, has overtaken; and stops it at its next page.
@@ -91,9 +97,9 @@ class QueueActivity : Activity() {
             bar = false // No mini player here, as in the Mac app; the player still marks the track and follows the speakers.
             media = true
             onOpen = { finish() } // Now Playing opened this screen: back to it, rather than a second copy.
-            onPosition = { p, queued ->
+            onPosition = { p, queued, at ->
                 playsQueue = queued
-                mark(if (queued) p.index - 1 else -1)
+                if (marking == 0 && at > marked) mark(if (queued) p.index - 1 else -1)
             }
             onNetwork = { if (Lan.wifi != null) load() }
             onRegroup = { load() } // Another coordinator, another queue.
@@ -214,20 +220,24 @@ class QueueActivity : Activity() {
     private fun jump(n: Int) {
         val room = player.room ?: return
         val e = items[n]
-        mark(n) // At once; the player's next answer confirms it.
+        mark(n) // At once; the player's answers after the jump landed confirm it.
+        marking++
         later(sonos) {
+            var again = false
             try {
                 // A jump goes to a position, and the queue may have changed elsewhere since it was read: first the track
                 // there is checked to be this one; if it isn't, the list is read again instead (~15 ms).
                 val now = Sonos.queueItem(room, n) { player.cover(room, it) }.entries.firstOrNull()
-                if (now == null || now.title != e.title || now.artist != e.artist || now.album != e.album) {
-                    runOnUiThread { if (started) load() }
+                if (!same(now, e)) {
+                    again = true
                     return@later
                 }
                 Sonos.jump(room, n + 1)
             } catch (x: Exception) {
                 Log.i(TAG, "Jump to ${n + 1} on ${room.name}: $x")
                 runOnUiThread { toast(getString(R.string.cant_play, e.title)) }
+            } finally {
+                landed(again)
             }
             player.refresh()
         }
@@ -239,7 +249,7 @@ class QueueActivity : Activity() {
      * is read again instead. The delete carries the queue's revision from that check, so a change in between makes the
      * speaker refuse it, rather than take another track. Several in a row line up behind each other, each checked
      * against the queue as it is then. A list read still under way would bring the row back: it's dropped, and the list
-     * is read again once the speaker has confirmed.
+     * is read again once the speaker has confirmed the last of them (see landed()).
      */
     private fun remove(n: Int) {
         val room = player.room ?: return
@@ -247,6 +257,7 @@ class QueueActivity : Activity() {
         gen++
         items = items.toMutableList().apply { removeAt(n) }
         if (n < current) current-- // The rows below move up; the playing one's place goes to the track after it.
+        marking++ // Until the ✕ landed, answers read before it don't move the mark back.
         length = maxOf(length - 1, items.size)
         summary(resources.getQuantityString(R.plurals.track_count, length, length), R.color.success)
         clear.visibility = if (items.isEmpty()) View.GONE else View.VISIBLE
@@ -255,29 +266,54 @@ class QueueActivity : Activity() {
             try {
                 val page = Sonos.queueItem(room, n) { player.cover(room, it) }
                 val now = page.entries.firstOrNull()
-                if (now == null || now.title != e.title || now.artist != e.artist || now.album != e.album) {
-                    runOnUiThread { if (started) load() }
-                    return@later
-                }
+                if (!same(now, e)) return@later
                 Sonos.remove(room, n + 1, page.update)
-                runOnUiThread { if (started) load() }
             } catch (x: Exception) {
                 Log.i(TAG, "Remove ${n + 1} on ${room.name}: $x")
                 // Changed meanwhile: no failure, as when the check found another track; the list is read again.
                 val changed = x is HttpException && x.upnp == QUEUE_CHANGED
-                runOnUiThread {
-                    if (!changed) toast(getString(R.string.remove_error))
-                    if (started) load()
-                }
+                if (!changed) runOnUiThread { toast(getString(R.string.remove_error)) }
+            } finally {
+                landed(again = true) // The list read again, whatever happened, once the last ✕ is back.
             }
             player.refresh()
         }
     }
 
+    /**
+     * A jump or ✕ is back: from now on the player's answers mark the playing track again. [again]: it wants the list read
+     * again, which happens once the last of those lined up is back: read in between, the queue would still hold the
+     * track of a ✕ waiting its turn, and its row would come back for a moment. On the worker thread.
+     */
+    private fun landed(again: Boolean = false) {
+        val t = SystemClock.uptimeMillis() // Here, before the refresh that follows it.
+        runOnUiThread {
+            marking--
+            marked = t
+            if (again) reload = true
+            if (marking == 0 && reload) {
+                reload = false
+                if (started) load()
+            }
+        }
+    }
+
+    /**
+     * Whether [now], the track the speaker has at a place, is still [e], the row's: by its link as well as its labels, as
+     * two different files can carry the same title, artist and album.
+     */
+    private fun same(now: Entry?, e: Entry) =
+        now != null && now.title == e.title && now.artist == e.artist && now.album == e.album && now.res?.url == e.res?.url
+
+    /**
+     * Empties [room]'s queue, its turn taken as it's confirmed: a fill still going stops, and a play asked for after it,
+     * also elsewhere, wins when it gets there first, rather than being cleared away by this one coming later.
+     */
     private fun clear(room: Room) {
+        val turn = Sonos.turn(room)
         later(sonos) {
             try {
-                Sonos.clear(room)
+                Sonos.clear(room, turn)
             } catch (x: Exception) {
                 Log.i(TAG, "Clear on ${room.name}: $x")
                 runOnUiThread { toast(getString(R.string.clear_error)) }

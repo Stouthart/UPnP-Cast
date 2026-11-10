@@ -84,7 +84,7 @@
         <item name="android:layout_height">48dp</item> <!-- One height for segments and buttons, in both apps. -->
         <item name="android:layout_weight">1</item>
         <item name="android:background">@drawable/segment</item>
-        <item name="android:foreground">@drawable/press</item>
+        <item name="android:foreground">@drawable/press_full</item>
         <item name="android:gravity">center</item>
         <item name="android:maxLines">1</item>
         <item name="android:paddingHorizontal">6dp</item>

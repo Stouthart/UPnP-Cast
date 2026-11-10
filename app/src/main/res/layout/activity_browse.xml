@@ -97,7 +97,8 @@
 
     <!-- One column is the list; tiles get as many as the width holds, set in code. Its 16dp sides are padding, and
          it doesn't clip its tiles, so a tile's ⋮ shows its whole circle of feedback past the tile's edge. A row or tile
-         lights up itself; the list's own highlight would sit behind it. -->
+         lights up itself; the list's own highlight would sit behind it. Its scroll bar shows while it scrolls and fades
+         after, at the screen's edge in that padding, as the opening screen's, clear of the tiles. -->
     <GridView
         android:id="@+id/list"
         android:layout_width="match_parent"
@@ -109,7 +110,7 @@
         android:numColumns="1"
         android:paddingHorizontal="16dp"
         android:paddingVertical="16dp"
-        android:scrollbars="none"
+        android:scrollbarStyle="outsideOverlay"
         android:stretchMode="columnWidth"
         android:verticalSpacing="8dp" />
 

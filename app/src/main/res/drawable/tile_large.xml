@@ -1,7 +1,7 @@
-<!-- Behind a tile's cover in Browse's grid: as tile, with the 16dp corners of the cards and panels it sits in; the small
-     covers and icons in rows keep tile's 8dp, as 16dp would round a 40dp square almost to a circle. -->
+<!-- Behind a tile's cover in Browse's grid: as tile, with 8dp corners inside the tile's 12dp; the small covers and icons
+     in rows keep tile's 4dp, as Apple's artwork and Material 3's extra small. -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android"
     android:shape="rectangle">
     <solid android:color="@color/divider" />
-    <corners android:radius="16dp" />
+    <corners android:radius="8dp" />
 </shape>

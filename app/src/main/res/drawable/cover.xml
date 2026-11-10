@@ -1,6 +1,6 @@
-<!-- Behind the large cover on Now Playing; with clipToOutline it rounds the image, like the cards. -->
+<!-- Behind the large cover on Now Playing; with clipToOutline it rounds the image, with the cards' 12dp corners. -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android"
     android:shape="rectangle">
     <solid android:color="@color/card" />
-    <corners android:radius="16dp" />
+    <corners android:radius="12dp" />
 </shape>

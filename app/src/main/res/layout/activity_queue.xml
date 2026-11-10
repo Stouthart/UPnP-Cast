@@ -62,7 +62,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginEnd="12dp"
-                android:background="@drawable/press"
+                android:background="@drawable/press_full"
                 android:fontFamily="sans-serif-medium"
                 android:padding="8dp"
                 android:text="@string/clear_queue"
@@ -72,18 +72,20 @@
         </LinearLayout>
     </LinearLayout>
 
+    <!-- Its scroll bar shows while it scrolls and fades after, at the screen's edge in the 16dp side padding, as the
+         opening screen's and Browse's, clear of the rows. -->
     <ListView
         android:id="@+id/list"
         android:layout_width="match_parent"
         android:layout_height="0dp"
-        android:layout_marginHorizontal="16dp"
         android:layout_weight="1"
         android:clipToPadding="false"
         android:divider="@android:color/transparent"
         android:dividerHeight="8dp"
         android:listSelector="@android:color/transparent"
+        android:paddingHorizontal="16dp"
         android:paddingVertical="16dp"
-        android:scrollbars="none" />
+        android:scrollbarStyle="outsideOverlay" />
 
     <include layout="@layout/player" />
 </LinearLayout>
