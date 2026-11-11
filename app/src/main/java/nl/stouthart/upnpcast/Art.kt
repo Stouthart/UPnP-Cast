@@ -7,6 +7,7 @@ import android.os.Handler
 import android.os.Looper
 import android.util.LruCache
 import android.widget.ImageView
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.LinkedBlockingDeque
 import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.TimeUnit
@@ -26,6 +27,7 @@ class Art(val px: Int, private val also: Int = 0, private val loaded: (String) -
     }
 
     private val loading = HashSet<String>() // Main thread only, like failed.
+    private val queued = ConcurrentHashMap.newKeySet<String>() // Fetches not begun: pause() drops these alone.
     private val failed = HashSet<String>()
     private val main = Handler(Looper.getMainLooper())
     private val pool = ThreadPoolExecutor(
@@ -53,7 +55,9 @@ class Art(val px: Int, private val also: Int = 0, private val loaded: (String) -
         v.scaleType = ImageView.ScaleType.CENTER
         v.setImageResource(fallback)
         if (url == null || url in failed || !loading.add(url)) return
+        queued += url
         later(pool) {
+            queued -= url
             val bytes = runCatching { Http.get(url) }.getOrNull()
             val t = bytes?.let { runCatching { thumb(it, px) }.getOrNull() }
             val big = if (t == null || also <= 0 || cache.get(key(url, also)) != null) null
@@ -81,10 +85,14 @@ class Art(val px: Int, private val also: Int = 0, private val loaded: (String) -
         return true
     }
 
-    /** The screen stopped: the loads not yet begun are dropped, nothing fetches for a screen that isn't shown. */
+    /**
+     * The screen stopped: the loads not yet begun are dropped, nothing fetches for a screen that isn't shown. Those still
+     * running land in the cache as they finish, and aren't fetched a second time meanwhile.
+     */
     fun pause() {
         pool.queue.clear()
-        loading.clear() // Those still running land in the cache as they finish.
+        loading.removeAll(queued)
+        queued.clear()
         paused = true
     }
 

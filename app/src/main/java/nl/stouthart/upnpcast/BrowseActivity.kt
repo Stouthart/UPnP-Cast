@@ -32,6 +32,7 @@ private const val KEY_ALBUM_TILES = "album_tiles" // An album's own, its tracks 
 private const val TILE_DP = 150 // The tile size aimed at, rounded to whole columns: 4 on the Astra, 3 on the S25.
 private const val GAP_DP = 12
 private const val SCAN_POLL_MS = 1000L // How often a scan is checked; the speaker answers in ~10 ms.
+private const val SCAN_MAX = 1800 // Checks, half an hour: a speaker that never says it's done can't keep it going.
 
 /** One server's tree, a level at a time; Back goes up a level, and leaves at the top. */
 class BrowseActivity : Activity() {
@@ -53,6 +54,27 @@ class BrowseActivity : Activity() {
     private class Level(val id: String, val title: String, val album: Boolean = false) {
         val items = ArrayList<Entry>()
         var discs = false // An album with tracks on more than one disc: their numbers name the disc too.
+        var playable = false // Holds a track that can play: ▶ shows.
+        var onlyTracks = true // No container so far: the count line counts tracks.
+        private val discSet = HashSet<Int>()
+
+        /** [got] in, with what the count line, ▶ and the numbering need, kept up as the pages come. */
+        fun add(got: List<Entry>) {
+            items += got
+            for (e in got) {
+                if (e.container) onlyTracks = false else if (e.playable) playable = true
+                if (!e.container && e.disc > 0) discSet += e.disc
+            }
+            discs = album && discSet.size > 1
+        }
+
+        fun clear() {
+            items.clear()
+            playable = false
+            onlyTracks = true
+            discSet.clear()
+            discs = false
+        }
         var total = -1 // Unknown until the first page.
         var error: String? = null
         var resume = 0 // Where paging stopped, at an error or when the screen did: it goes on from there.
@@ -127,7 +149,7 @@ class BrowseActivity : Activity() {
             h.meta.text = when {
                 tiles && !e.container && e.fav == null -> e.res?.time().orEmpty()
                 high -> SpannableString(e.meta).apply {
-                    val f = e.res!!.format()
+                    val f = e.res?.format().orEmpty()
                     val at = e.meta.lastIndexOf(f)
                     if (at >= 0) setSpan(ForegroundColorSpan(getColor(R.color.warning)), at, at + f.length, 0)
                 }
@@ -150,7 +172,7 @@ class BrowseActivity : Activity() {
                 it.contentDescription = getString(R.string.favorite_remove)
                 it.setOnClickListener { unfavorite(e) }
             }
-            (if (tiles) tileArt!! else art).show(h.art, e.art, if (e.container) R.drawable.ic_folder else R.drawable.ic_music)
+            (if (tiles) tileArt ?: art else art).show(h.art, e.art, if (e.container) R.drawable.ic_folder else R.drawable.ic_music)
             val dim = if (e.container || e.playable) 1f else 0.5f
             h.art.alpha = dim
             h.name.alpha = dim
@@ -213,6 +235,7 @@ class BrowseActivity : Activity() {
         title = findViewById(R.id.title)
         summary = findViewById(R.id.summary)
         list = findViewById(R.id.list)
+        findViewById<View>(R.id.header).scrollsWith(list) // Away with the rows, as the opening screen's cards.
         play = findViewById(R.id.play)
         scan = findViewById(R.id.scan)
         viewType = findViewById(R.id.view_type)
@@ -236,6 +259,7 @@ class BrowseActivity : Activity() {
             hosts += Player.hosts(i) // The main screen's servers too: the track playing may be another server's.
             room = Player.room(i) // Where tracks play, following the speakers' grouping; null when no Sonos was found.
             onNetwork = { retry() }
+            onFavorites = { this@BrowseActivity.refresh() } // Favorites shows one saved or removed with its heart.
         }
         open(
             when {
@@ -304,8 +328,9 @@ class BrowseActivity : Activity() {
         later(pool) {
             val done = runCatching {
                 if (!Sonos.scanning(server.control)) Sonos.scan(server.control)
-                do Thread.sleep(SCAN_POLL_MS) while (started && Sonos.scanning(server.control))
-                started // Else the screen left first: no word on it.
+                var checks = 0
+                do Thread.sleep(SCAN_POLL_MS) while (started && ++checks < SCAN_MAX && Sonos.scanning(server.control))
+                if (started) checks < SCAN_MAX else null // Else the screen left first: no word on it.
             }
             runOnUiThread {
                 if (isDestroyed) return@runOnUiThread
@@ -313,7 +338,7 @@ class BrowseActivity : Activity() {
                 scan.isEnabled = true
                 scan.imageTintList = null
                 summary()
-                done.onSuccess { if (it) toast(getString(R.string.scan_complete)) }.onFailure {
+                done.onSuccess { if (it == true) toast(getString(R.string.scan_complete)) else if (it == false) toast(getString(R.string.scan_error)) }.onFailure {
                     Log.i(TAG, "Scan on ${server.host}: $it")
                     toast(if (Lan.wifi == null) getString(R.string.no_wifi) else getString(R.string.scan_error))
                 }
@@ -476,7 +501,7 @@ class BrowseActivity : Activity() {
         val l = level
         val top = server.library && stack.size == 1
         // Not for favourites: each is its own thing to play, not a level's tracks.
-        play.visibility = if (!server.favorites && l.items.any { !it.container && it.playable }) View.VISIBLE else View.GONE
+        play.visibility = if (!server.favorites && l.playable) View.VISIBLE else View.GONE
         scan.visibility = if (top) View.VISIBLE else View.GONE
         // The count in green once it's known; the server not answering in the warning colour; grey while loading.
         val busy = (top && scanning) || l.total < 0
@@ -486,7 +511,7 @@ class BrowseActivity : Activity() {
             l.error != null -> l.error
             l.total < 0 -> getString(R.string.loading)
             server.favorites -> resources.getQuantityString(R.plurals.favorite_count, l.total, l.total)
-            l.items.isNotEmpty() && l.items.none { it.container } -> resources.getQuantityString(R.plurals.track_count, l.total, l.total)
+            l.items.isNotEmpty() && l.onlyTracks -> resources.getQuantityString(R.plurals.track_count, l.total, l.total)
             else -> resources.getQuantityString(R.plurals.item_count, l.total, l.total)
         }
     }
@@ -543,9 +568,8 @@ class BrowseActivity : Activity() {
                 for (e in got) e.meta = meta(resources, e)
                 runOnUiThread {
                     if (!l.alive) return@runOnUiThread
-                    l.items += got
+                    l.add(got)
                     l.total = page.total
-                    if (l.album) l.discs = l.items.filter { !it.container && it.disc > 0 }.mapTo(HashSet()) { it.disc }.size > 1
                     if (l === level) {
                         adapter.notifyDataSetChanged()
                         summary()
@@ -586,7 +610,7 @@ class BrowseActivity : Activity() {
                 runOnUiThread {
                     toast(getString(R.string.unfavorite_error))
                     if (!l.alive || l.paging) return@runOnUiThread
-                    l.items.clear()
+                    l.clear()
                     l.total = -1
                     l.done = false
                     l.error = null
@@ -615,8 +639,8 @@ class BrowseActivity : Activity() {
             for (e in all) e.meta = meta(resources, e)
             runOnUiThread {
                 if (g != edits || !l.alive || l.paging) return@runOnUiThread
-                l.items.clear()
-                l.items += all
+                l.clear()
+                l.add(all)
                 l.total = all.size
                 if (l === level) {
                     adapter.notifyDataSetChanged()

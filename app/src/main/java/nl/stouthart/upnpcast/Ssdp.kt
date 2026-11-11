@@ -28,7 +28,7 @@ object Ssdp {
                 s.send(DatagramPacket(m, m.size, group, 1900))
             }
             val end = SystemClock.elapsedRealtime() + ms
-            val buf = ByteArray(2048)
+            val buf = ByteArray(4096) // Sonos and MinimServer answer in a few hundred bytes; a wordy server has room.
             val p = DatagramPacket(buf, buf.size)
             while (true) {
                 val left = end - SystemClock.elapsedRealtime()
@@ -40,22 +40,29 @@ object Ssdp {
                 } catch (_: SocketTimeoutException) {
                     return
                 }
-                var st = ""
-                var location = ""
-                var usn = ""
-                for (l in String(buf, 0, p.length, Charsets.ISO_8859_1).split("\r\n")) {
-                    val c = l.indexOf(':')
-                    if (c < 0) continue
-                    when (l.substring(0, c).trim().uppercase()) {
-                        "ST" -> st = l.substring(c + 1).trim()
-                        "LOCATION" -> location = l.substring(c + 1).trim()
-                        "USN" -> usn = l.substring(c + 1).trim()
-                    }
-                }
-                // A device names its own address; any other would aim our requests at a third party.
-                val u = runCatching { URL(location) }.getOrNull()
-                if (st in targets && u?.protocol == "http" && u.host == p.address.hostAddress) found(Answer(st, location, usn))
+                parse(String(buf, 0, p.length, Charsets.ISO_8859_1), p.address.hostAddress ?: "", targets)?.let(found)
             }
         }
+    }
+
+    /**
+     * The answer in [text], sent from [address], when it's for one of [targets] and names its own address as its
+     * location: any other would aim our requests at a third party. Else null.
+     */
+    internal fun parse(text: String, address: String, targets: Array<String>): Answer? {
+        var st = ""
+        var location = ""
+        var usn = ""
+        for (l in text.split("\r\n")) {
+            val c = l.indexOf(':')
+            if (c < 0) continue
+            when (l.substring(0, c).trim().uppercase()) {
+                "ST" -> st = l.substring(c + 1).trim()
+                "LOCATION" -> location = l.substring(c + 1).trim()
+                "USN" -> usn = l.substring(c + 1).trim()
+            }
+        }
+        val u = runCatching { URL(location) }.getOrNull()
+        return if (st in targets && u?.protocol == "http" && u.host == address) Answer(st, location, usn) else null
     }
 }

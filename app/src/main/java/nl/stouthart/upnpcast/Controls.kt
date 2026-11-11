@@ -11,9 +11,12 @@ import android.util.TypedValue
 import android.view.GestureDetector
 import android.view.MotionEvent
 import android.view.View
+import android.widget.AbsListView
 import android.widget.ImageView
 import android.widget.ScrollView
 import android.widget.TextView
+import android.widget.Toast
+import java.util.concurrent.Executor
 import kotlin.math.abs
 
 private const val SWIPE_DP = 1000 // dp/s downwards that close a sheet: a flick, not a slow scroll.
@@ -26,6 +29,44 @@ private const val SWIPE_DP = 1000 // dp/s downwards that close a sheet: a flick,
 @SuppressLint("SourceLockedOrientationActivity") // On purpose: on a phone only.
 fun Activity.uprightOnPhone() {
     if (resources.configuration.smallestScreenWidthDp < 600) requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+}
+
+/** Runs [work] on [e], or not at all once the screen that owns [e] has shut it down: never a crash. */
+fun later(e: Executor, work: () -> Unit) {
+    runCatching { e.execute(work) }
+}
+
+/** Why [name] didn't answer: the phone has no WiFi, or else the device itself. */
+fun Context.unreachable(name: String): String =
+    if (Lan.wifi == null) getString(R.string.no_wifi) else getString(R.string.cant_reach, name)
+
+/** A message for a moment, on the app's context: one that lands after its screen closed doesn't keep that alive. */
+fun Context.toast(text: String) = Toast.makeText(applicationContext, text, Toast.LENGTH_LONG).show()
+
+/**
+ * Browse's and the Queue's top card, scrolling away with [list] as the opening screen's cards do. It lies over the
+ * list's top, as a GridView has no header of its own: the list's top padding follows the card's height, as a title on
+ * two lines makes it taller, so the first row starts 16dp below it; the card moves up with that row and is gone once
+ * the row is. It takes the taps its buttons don't, so the rows under it don't get them. The same in the Mac app.
+ */
+@SuppressLint("ClickableViewAccessibility") // Nothing to click: the card's buttons are its accessible parts.
+fun View.scrollsWith(list: AbsListView) {
+    setOnTouchListener { _, _ -> true }
+    addOnLayoutChangeListener { _, _, _, _, b, _, _, _, _ ->
+        val top = b + (16 * resources.displayMetrics.density).toInt()
+        if (list.paddingTop != top) list.setPadding(list.paddingLeft, top, list.paddingRight, list.paddingBottom)
+    }
+    // Before each frame, so the card is drawn where the rows are, with no frame behind.
+    list.viewTreeObserver.addOnPreDrawListener {
+        val first = list.getChildAt(0)
+        val y = when {
+            first == null -> 0f // Nothing to scroll yet.
+            list.firstVisiblePosition == 0 -> minOf(0, first.top - list.paddingTop).toFloat()
+            else -> -bottom.toFloat() // Past the first row: out of view.
+        }
+        if (translationY != y) translationY = y
+        true
+    }
 }
 
 /** The screens' controls and rows, shared by the main screen, Now Playing and Room settings. */

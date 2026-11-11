@@ -32,12 +32,12 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 
 private const val TAG = "UPnPCast"
-private const val SEARCH_MS = 1500L // Devices answer within MX (1 s); the rest is slack for the network.
+private const val SEARCH_MS = 2000L // Devices answer within MX (1 s); 2 s, a usual timeout on a network. As the Mac app.
 private const val KEY_SONOS = "sonos" // A player's description URL: any player knows every room.
 private const val KEY_SERVERS = "servers" // The servers' description URLs.
 private const val MAX_DEVICES = 32 // Per search: a device answering with endless paths can't start endless fetches.
 private const val SETTLE_MS = 350L // Between topology reads after a grouping change, until the speakers report it.
-private const val SETTLE_TRIES = 6
+private const val SETTLE_TRIES = 10 // Up to 3.5 s: a hand-over with Spotify playing takes 4 s, the call itself most of it. As the Mac app.
 
 /** A device's icon, refused when its size is beyond any icon's: the PNG comes from the network. */
 private fun icon(b: ByteArray): Bitmap? {
@@ -85,6 +85,8 @@ class MainActivity : Activity() {
         player.onNetwork = { search() } // Another network may hold other rooms and servers; none, and the screen says so.
         // Grouped elsewhere, as in the Sonos app: the checks follow. A change made here shows once it settled.
         player.onRegroup = { if (!settling) place(it) }
+        // A favourite saved or removed with the mini player's heart: the Favorites card follows at once.
+        player.onFavorites = { all -> favorites?.let { showFavorites(it, all) } }
         findViewById<TextView>(R.id.copyright).text = getString(R.string.copyright, BuildConfig.VERSION_NAME)
         allow.setOnClickListener {
             // After a second "Don't allow" Android stops asking; then only the app's settings page can grant it.
@@ -316,8 +318,9 @@ class MainActivity : Activity() {
                 // Alongside the library's shares; read again on every search, for one saved elsewhere meanwhile. The
                 // panel stays as it was until then: no jump of the cards below it.
                 val fav = Server(dev.udn, getString(R.string.favorites), dev.host, dev.control, null, favorites = true)
+                Player.favorites = fav // The heart's too, on every screen.
                 task {
-                    runCatching { Upnp.browse(fav, "FV:2", 0, 100).entries }.onSuccess {
+                    runCatching { Sonos.favorites(fav) }.onSuccess { // All of them, over every page, as the Mac app.
                         runOnUiThread { if (g == gen) showFavorites(fav, it) }
                     }
                 }
@@ -394,6 +397,7 @@ class MainActivity : Activity() {
         household = t
         found = t.rooms
         for (x in t.rooms) Player.players += x.own.substringBeforeLast(':')
+        Player.rooms = t.rooms // For Room settings from the player's room name, on any screen.
         rooms.removeAllViews()
         // Each room by its main player's kind and model, known from the last start; a new room shows a speaker and its
         // address alone until read. The address is the room's own player's.

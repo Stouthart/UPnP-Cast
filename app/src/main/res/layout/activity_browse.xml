@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- One level of a server's tree: the level's card on top, its entries below.
+<!-- One level of a server's tree: the level's card on top, scrolling away with its entries as the opening screen's do.
      fitsSystemWindows replaces the root's padding with the bar insets, so the spacing is in margins. -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
@@ -7,112 +7,122 @@
     android:fitsSystemWindows="true"
     android:orientation="vertical">
 
-    <!-- The title row reaches into the card's padding, as on the opening screen's Rooms card: its last glyph ends at
-         the card's content edge, where the mini player's Play circle and the list's › do. The card leaves its padding
-         unclipped, so the buttons' touch feedback shows whole. -->
-    <LinearLayout
-        style="@style/Card"
-        android:layout_marginHorizontal="16dp"
-        android:layout_marginTop="16dp"
-        android:clipToPadding="false">
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginEnd="-20dp"
-            android:gravity="center_vertical"
-            android:orientation="horizontal">
-
-            <View
-                android:layout_width="4dp"
-                android:layout_height="match_parent"
-                android:background="@drawable/bar" />
-
-            <LinearLayout
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="16dp"
-                android:layout_weight="1"
-                android:orientation="vertical">
-
-                <TextView
-                    android:id="@+id/title"
-                    style="@style/Title"
-                    android:layout_width="match_parent"
-                    android:ellipsize="end"
-                    android:maxLines="2" />
-
-                <TextView
-                    android:id="@+id/summary"
-                    style="@style/Summary" />
-            </LinearLayout>
-
-            <!-- Plays the level's tracks from the top, as a tap on the first; only where there are tracks. Grey, as the
-                 header's other buttons. -->
-            <ImageView
-                android:id="@+id/play"
-                android:layout_width="40dp"
-                android:layout_height="40dp"
-                android:background="@drawable/control"
-                android:contentDescription="@string/play"
-                android:padding="8dp"
-                android:src="@drawable/ic_play"
-                android:tint="@color/text2"
-                android:visibility="gone" />
-
-            <!-- The Music library's top level only, which has no tracks and so no Play: Scan for new content. -->
-            <ImageView
-                android:id="@+id/scan"
-                android:layout_width="40dp"
-                android:layout_height="40dp"
-                android:background="@drawable/control"
-                android:contentDescription="@string/scan"
-                android:padding="8dp"
-                android:src="@drawable/ic_refresh"
-                android:visibility="gone" />
-
-            <!-- Back to the opening screen from any level; left of the toggle, which keeps its place. -->
-            <ImageView
-                android:id="@+id/home"
-                android:layout_width="40dp"
-                android:layout_height="40dp"
-                android:background="@drawable/control"
-                android:contentDescription="@string/home"
-                android:padding="8dp"
-                android:src="@drawable/ic_home" />
-
-            <!-- Where the Queue card has Clear queue: switches between the list and tiles. Its glyph stops 11dp inside
-                 its 40dp, so 9dp in from the row's end, as Room settings. -->
-            <ImageView
-                android:id="@+id/view_type"
-                android:layout_width="40dp"
-                android:layout_height="40dp"
-                android:layout_marginEnd="9dp"
-                android:background="@drawable/control"
-                android:contentDescription="@string/grid_list"
-                android:padding="8dp"
-                android:src="@drawable/ic_grid" />
-        </LinearLayout>
-    </LinearLayout>
-
-    <!-- One column is the list; tiles get as many as the width holds, set in code. Its 16dp sides are padding, and
-         it doesn't clip its tiles, so a tile's ⋮ shows its whole circle of feedback past the tile's edge. A row or tile
-         lights up itself; the list's own highlight would sit behind it. Its scroll bar shows while it scrolls and fades
-         after, at the screen's edge in that padding, as the opening screen's, clear of the tiles. -->
-    <GridView
-        android:id="@+id/list"
+    <!-- The card lies over the list's top and scrolls with it (scrollsWith): a GridView has no header of its own. The
+         list's top padding follows the card's height, so its first row starts 16dp below it. -->
+    <FrameLayout
         android:layout_width="match_parent"
         android:layout_height="0dp"
-        android:layout_weight="1"
-        android:clipChildren="false"
-        android:clipToPadding="false"
-        android:listSelector="@android:color/transparent"
-        android:numColumns="1"
-        android:paddingHorizontal="16dp"
-        android:paddingVertical="16dp"
-        android:scrollbarStyle="outsideOverlay"
-        android:stretchMode="columnWidth"
-        android:verticalSpacing="8dp" />
+        android:layout_weight="1">
+
+        <!-- One column is the list; tiles get as many as the width holds, set in code. Its 16dp sides are padding, and
+             it doesn't clip its tiles, so a tile's ⋮ shows its whole circle of feedback past the tile's edge. A row or tile
+             lights up itself; the list's own highlight would sit behind it. Its scroll bar shows while it scrolls and fades
+             after, at the screen's edge in that padding, as the opening screen's, clear of the tiles. -->
+        <GridView
+            android:id="@+id/list"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:clipChildren="false"
+            android:clipToPadding="false"
+            android:listSelector="@android:color/transparent"
+            android:numColumns="1"
+            android:paddingHorizontal="16dp"
+            android:paddingTop="16dp"
+            android:paddingBottom="16dp"
+            android:scrollbarStyle="outsideOverlay"
+            android:stretchMode="columnWidth"
+            android:verticalSpacing="8dp" />
+
+        <!-- The title row reaches into the card's padding, as on the opening screen's Rooms card: its last glyph ends at
+             the card's content edge, where the mini player's Play circle and the list's › do. The card leaves its padding
+             unclipped, so the buttons' touch feedback shows whole. -->
+        <LinearLayout
+            android:id="@+id/header"
+            style="@style/Card"
+            android:accessibilityTraversalBefore="@id/list"
+            android:layout_marginHorizontal="16dp"
+            android:layout_marginTop="16dp"
+            android:clipToPadding="false">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="-20dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <View
+                    android:layout_width="4dp"
+                    android:layout_height="match_parent"
+                    android:background="@drawable/bar" />
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="16dp"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:id="@+id/title"
+                        style="@style/Title"
+                        android:layout_width="match_parent"
+                        android:ellipsize="end"
+                        android:maxLines="2" />
+
+                    <TextView
+                        android:id="@+id/summary"
+                        style="@style/Summary" />
+                </LinearLayout>
+
+                <!-- Plays the level's tracks from the top, as a tap on the first; only where there are tracks. Grey, as the
+                     header's other buttons. -->
+                <ImageView
+                    android:id="@+id/play"
+                    android:layout_width="40dp"
+                    android:layout_height="40dp"
+                    android:background="@drawable/control"
+                    android:contentDescription="@string/play"
+                    android:padding="8dp"
+                    android:src="@drawable/ic_play"
+                    android:tint="@color/text2"
+                    android:visibility="gone" />
+
+                <!-- The Music library's top level only, which has no tracks and so no Play: Scan for new content. -->
+                <ImageView
+                    android:id="@+id/scan"
+                    android:layout_width="40dp"
+                    android:layout_height="40dp"
+                    android:background="@drawable/control"
+                    android:contentDescription="@string/scan"
+                    android:padding="8dp"
+                    android:src="@drawable/ic_refresh"
+                    android:visibility="gone" />
+
+                <!-- Back to the opening screen from any level; left of the toggle, which keeps its place. -->
+                <ImageView
+                    android:id="@+id/home"
+                    android:layout_width="40dp"
+                    android:layout_height="40dp"
+                    android:background="@drawable/control"
+                    android:contentDescription="@string/home"
+                    android:padding="8dp"
+                    android:src="@drawable/ic_home" />
+
+                <!-- Where the Queue card has Clear queue: switches between the list and tiles. Its glyph stops 11dp inside
+                     its 40dp, so 9dp in from the row's end, as Room settings. -->
+                <ImageView
+                    android:id="@+id/view_type"
+                    android:layout_width="40dp"
+                    android:layout_height="40dp"
+                    android:layout_marginEnd="9dp"
+                    android:background="@drawable/control"
+                    android:contentDescription="@string/grid_list"
+                    android:padding="8dp"
+                    android:src="@drawable/ic_grid" />
+            </LinearLayout>
+        </LinearLayout>
+    </FrameLayout>
 
     <include layout="@layout/player" />
 </LinearLayout>

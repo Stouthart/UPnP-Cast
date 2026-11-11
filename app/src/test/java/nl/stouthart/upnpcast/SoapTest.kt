@@ -66,4 +66,18 @@ class SoapTest {
         no(envelope("<u:PlayResponse $avt/>", "<!DOCTYPE s:Envelope [<!ENTITY x \"y\">]>"), "Play") // A DTD.
         no("text<s:Envelope xmlns:s=\"$soap\"><s:Body><u:PlayResponse $avt/></s:Body></s:Envelope>".toByteArray(), "Play")
     }
+
+    @Test
+    fun argumentsInTheSamePass() {
+        val reply = envelope("<u:GetPositionInfoResponse $avt><Track>3</Track><TrackMetaData>&lt;DIDL-Lite/&gt;</TrackMetaData>" +
+            "<RelTime><![CDATA[0:01:02]]></RelTime></u:GetPositionInfoResponse>")
+        val out = arrayOfNulls<String>(4)
+        assertTrue(Http.check(reply, "GetPositionInfo", "AVTransport", arrayOf("Track", "TrackMetaData", "RelTime", "TrackURI"), out))
+        assertEquals("3", out[0])
+        assertEquals("<DIDL-Lite/>", out[1]) // Unescaped once, as nextText() does.
+        assertEquals("0:01:02", out[2])
+        assertEquals(null, out[3]) // Not there.
+        // Not the answer: nothing read counts.
+        assertFalse(Http.check(envelope("<u:PlayResponse $avt><Track>3</Track></u:PlayResponse>"), "GetPositionInfo", "AVTransport", arrayOf("Track"), arrayOfNulls(1)))
+    }
 }

@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The mini player's TalkBack action for its room's name: Room settings. -->
+    <item name="action_room_settings" type="id" />
+</resources>

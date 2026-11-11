@@ -20,7 +20,6 @@ import java.util.concurrent.Callable
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 
-private const val READS_AT_ONCE = 4 // A room's settings, read this many at a time.
 
 // How a level shows its value: signed as the Sonos app shows Bass (-1, 0, +1), in percent, as it is, or by name.
 private const val SIGNED = 0
@@ -227,7 +226,7 @@ class RoomActivity : Activity() {
         val made = edits
         later(io) {
             if (g != gen) return@later // Overtaken while a change went out: not a request for it.
-            val pool = Executors.newFixedThreadPool(READS_AT_ONCE)
+            val pool = Executors.newFixedThreadPool(asked.size) // All at once, as the Mac app: a dozen small reads.
             val got: HashMap<String, Int?>? = try {
                 val calls = ArrayList<Callable<Int?>>(asked.size)
                 for (k in asked) calls += Callable { if (g == gen) Sonos.setting(r.own, k) else null }

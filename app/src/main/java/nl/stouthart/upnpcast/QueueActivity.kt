@@ -84,6 +84,7 @@ class QueueActivity : Activity() {
         val room = Player.room(intent) ?: return finish()
         setContentView(R.layout.activity_queue)
         list = findViewById(R.id.list)
+        findViewById<View>(R.id.header).scrollsWith(list) // Away with the tracks, as Browse's card.
         summary = findViewById(R.id.summary)
         clear = findViewById(R.id.clear)
         art = Art((48 * resources.displayMetrics.density).toInt()) { url ->

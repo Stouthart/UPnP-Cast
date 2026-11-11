@@ -1,6 +1,5 @@
 package nl.stouthart.upnpcast
 
-import android.util.Xml
 import org.xmlpull.v1.XmlPullParser
 import org.xmlpull.v1.XmlPullParser.END_DOCUMENT
 import org.xmlpull.v1.XmlPullParser.END_TAG
@@ -65,12 +64,18 @@ fun noDtd(s: String): String {
     return s
 }
 
-private fun parser(b: ByteArray): XmlPullParser = Xml.newPullParser().apply { setInput(noDtd(b).inputStream(), null) }
+// The shared factory's, namespace-aware as Android's own: dc:title reads as "title", whatever the prefix.
+private fun parser(b: ByteArray): XmlPullParser = Http.parsers.newPullParser().apply { setInput(noDtd(b).inputStream(), null) }
 
-/** An IP address written out: IPv4, or IPv6 in brackets as a URL has it. Resolving one never asks DNS. */
+/**
+ * An IP address written out: IPv4, or IPv6 in brackets as a URL has it, hex digits and colons with a zone after %, as
+ * fe80::1%wlan0. Resolving one never asks DNS.
+ */
 fun literal(host: String): Boolean {
     if (host.length > 2 && host[0] == '[' && host[host.length - 1] == ']') {
-        return host.substring(1, host.length - 1).all { it == ':' || it == '.' || it == '%' || it.isLetterOrDigit() }
+        val (address, zone) = host.substring(1, host.length - 1).split('%', limit = 2).let { it[0] to it.getOrNull(1) }
+        return address.contains(':') && address.all { it == ':' || it == '.' || it in '0'..'9' || it in 'a'..'f' || it in 'A'..'F' } &&
+            (zone == null || zone.isNotEmpty() && zone.all { it.isLetterOrDigit() })
     }
     val p = host.split('.')
     return p.size == 4 && p.all { it.length in 1..3 && it.all { c -> c in '0'..'9' } && it.toInt() <= 255 }
@@ -117,8 +122,7 @@ fun serviceNames(list: String): Map<String, String> {
     for (m in SERVICE.findAll(list)) {
         val a = ATTR.findAll(m.groupValues[1]).associate { it.groupValues[1] to it.groupValues[2] }
         val id = a["Id"]?.takeIf { it.all(Char::isDigit) } ?: continue
-        out[id] = (a["Name"] ?: continue).replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", "\"")
-            .replace("&apos;", "'").replace("&amp;", "&")
+        out[id] = Upnp.unesc(a["Name"] ?: continue)
     }
     return out
 }
@@ -187,6 +191,9 @@ object Upnp {
 
     fun esc(s: String) = s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;")
 
+    /** The five entities an attribute may carry, as esc() writes them, back to text. */
+    fun unesc(s: String) = s.replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", "\"").replace("&apos;", "'").replace("&amp;", "&")
+
     /**
      * One page of a container's children; [total] tells whether more pages follow. [update] is the container's revision,
      * as a Sonos queue counts its changes: a delete sent with it is refused once the queue changed since.
@@ -207,12 +214,12 @@ object Upnp {
         page(control, id, FILTER, start, count) { Didl.parse(it, url) }
 
     private fun page(control: String, id: String, filter: String, start: Int, count: Int, parse: (String) -> List<Entry>): Page {
-        val reply = Http.soap(
+        val (result, returned, total, update) = Http.soapArgs(
             control, "ContentDirectory", "Browse",
             "<ObjectID>${esc(id)}</ObjectID><BrowseFlag>BrowseDirectChildren</BrowseFlag><Filter>$filter</Filter>" +
                 "<StartingIndex>$start</StartingIndex><RequestedCount>$count</RequestedCount><SortCriteria></SortCriteria>",
+            "Result", "NumberReturned", "TotalMatches", "UpdateID",
         )
-        val (result, returned, total, update) = args(reply, "Result", "NumberReturned", "TotalMatches", "UpdateID")
         return Page(parse(result ?: ""), returned?.toIntOrNull() ?: 0, total?.toIntOrNull() ?: 0, update?.toLongOrNull())
     }
 
@@ -275,7 +282,7 @@ object Upnp {
     fun topology(host: String): Topology {
         val reply = Http.soap("http://$host/ZoneGroupTopology/Control", "ZoneGroupTopology", "GetZoneGroupState")
         val state = arg(reply, "ZoneGroupState") ?: return Topology(emptyList(), emptyList(), emptyMap())
-        val p = Xml.newPullParser().apply { setInput(StringReader(noDtd(state))) }
+        val p = Http.parsers.newPullParser().apply { setInput(StringReader(noDtd(state))) }
         val groups = ArrayList<Room>()
         val rooms = ArrayList<Room>()
         val groupOf = HashMap<String, String>()
@@ -320,9 +327,13 @@ object Upnp {
         return Topology(groups.sortedBy { it.name }, rooms.sortedBy { it.name }, groupOf)
     }
 
-    /** The media server described at [location], or null when it has no ContentDirectory. */
+    /**
+     * The media server described at [location], or null when it has no ContentDirectory. Only on the phone's WiFi, as a
+     * player: a remembered address, or one a device answered with, is never taken further than that.
+     */
     fun server(location: String): Server? {
         val base = URL(location)
+        if (!literal(base.host) || !Lan.local(base.host)) return null
         val p = parser(Http.get(location))
         var udn = ""
         var name = ""

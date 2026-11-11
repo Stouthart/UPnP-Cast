@@ -11,3 +11,5 @@ local.properties
 .DS_Store
 # Third-party reference material (APKs, strings): local only.
 /reference.nosync/
+# The release signing key's location and passwords: this machine's alone.
+keystore.properties

@@ -1,8 +1,18 @@
-<!-- 2.4 - Copyright (C) 2026 Stouthart. All rights reserved. -->
+<!-- 2.5 - Copyright (C) 2026 Stouthart. All rights reserved. -->
 
 # Release notes
 
-Highlights per version, newest first, with 1.x condensed. 2.4 is the version distributed; the entries below it show how the app got there.
+Highlights per version, newest first, with 1.x condensed. 2.5 is the version distributed; the entries below it show how the app got there.
+
+## 2.5 - November 2026
+
+- **Top cards that scroll away:** in Browse and the Queue, the top card scrolls away with the list, as the opening screen's cards do, where it stayed in place.
+- **Room settings from the room:** a tap on the room's name in the mini player, or in the row at Now Playing's foot, opens Room settings, as the icon on the Rooms card does, with that room open. TalkBack offers it as one of the mini player's actions.
+- **The heart in the mini player:** from 600dp wide, as on a tablet either way round, the mini player has Now Playing's heart too, left of Play/Pause and as large. A tap saves or removes what plays as a favourite, and the opening screen's Favorites card and Favorites in Browse follow at once. It reads and saves them at the same speaker as that card, whichever room plays: each speaker keeps its own copy of the favourites, which follows a change only a while later. A narrower window in split screen leaves it out, as a phone does.
+- **Green hearts:** the heart fills in green while what plays is a favourite, as good news, where it was blue.
+- **Servers on the WiFi only:** a server must be on the phone's own WiFi, as a room's speaker must; a remembered address elsewhere is no longer used. An address in brackets must be a real IPv6 address.
+- **Sturdier:** **Scan for new content** is followed for half an hour at most, where a speaker that never said it was done kept the icon blue. A cover being fetched as a screen is left is no longer fetched twice, and a wordy server's answer to the search fits. A track length out of range, such as more hours than the app can count, counts as none, where it could show as negative. A reply with a malformed length or chunk is refused. A room whose play mode or queue can't be read no longer shows as unreachable: the rest of what it answered shows. A play that fails puts shuffle back on. The Favorites card counts every favourite, not only the first 100. **Not supported on this source.** ends with a full stop, as the other messages do.
+- **Lighter:** each reply is checked and read in one pass, with one XML parser maker for all of them; Browse works out its count line and **▶** as the pages come, rather than going through the whole level each time; a group's volume reuses its threads; and Room settings reads a room's settings all at once.
 
 ## 2.4 - November 2026
 

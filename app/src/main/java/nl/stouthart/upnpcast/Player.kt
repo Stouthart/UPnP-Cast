@@ -15,8 +15,11 @@ import android.text.Layout
 import android.text.SpannableString
 import android.text.TextUtils
 import android.text.style.ForegroundColorSpan
+import android.os.Bundle
 import android.view.KeyEvent
+import android.view.MotionEvent
 import android.view.View
+import android.view.accessibility.AccessibilityNodeInfo
 import android.view.animation.LinearInterpolator
 import android.widget.ImageView
 import android.widget.LinearLayout
@@ -31,8 +34,6 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
 private const val QUIET_MS = 1500L // After a change, polls leave that control alone until it has landed.
-private const val SLACK_MS = 250L // A position reply's trip, on top of the speaker rounding down to whole seconds.
-private const val SETTLE_MS = 4000L // How long a seek may take to land, while the speaker still reports 0 or the old place.
 private const val SEED_MS = 15_000L // How old what another screen showed may be for the next to start from it.
 private const val HOSTS = "hosts"
 private const val META_AGAIN_MS = 60_000L // After a failed read of a station or of the speakers' music services.
@@ -42,6 +43,9 @@ private const val GLIDE_WAIT_MS = 1200L // Before it slides, as Android's does; 
 // together in the middle rather than spreading to the edges. A phone's gaps are smaller (26dp with five on the S25).
 // The same in the Mac app. The progress bar and the volume keep the full width.
 private const val MAX_GAP_DP = 32f
+// From this screen width the mini player has Now Playing's heart too, left of Play/Pause: a tablet's either way round,
+// not a phone's, nor a narrow window in split screen. The same in the Mac app, by its window's width.
+private const val WIDE_DP = 600
 
 /**
  * The room's track and controls: the mini player at the foot of a screen, or all of Now Playing when the layout has a
@@ -87,6 +91,20 @@ class Player(private val a: Activity) {
 
         /** The Sonos players' addresses, as the household lists them: a favourite's cover may be on any of them. */
         val players: MutableSet<String> = ConcurrentHashMap.newKeySet()
+
+        /** The household's rooms, as the main screen found them or a regrouping brought them: Room settings opens on them. */
+        @Volatile
+        var rooms: List<Room> = emptyList()
+
+        /**
+         * The household's favourites, at the player the main screen found them at, where its Favorites card and Browse
+         * read them: the heart reads and saves there too, on every screen and whichever room plays, as in the Mac app.
+         * Each player keeps its own copy, which takes a while to follow a change made at another: read at the room
+         * that plays, the heart showed the copy before a change made in another room, and a tap did nothing or the
+         * opposite. Until the main screen has found them, no heart, as in the Mac app.
+         */
+        @Volatile
+        var favorites: Server? = null
 
         // What a player showed last, main thread only: the next screen's player on the same room starts from it, so
         // its cover, title and volume are there at once rather than after its first questions to the room.
@@ -134,6 +152,13 @@ class Player(private val a: Activity) {
 
     /** Runs after the player followed the speakers to a new group, with the household as it is now. */
     var onRegroup: ((Upnp.Topology) -> Unit)? = null
+
+    /**
+     * Runs after the mini player's heart saved or removed a favourite, with the favourites as they are now: the screen
+     * under it shows them at once, as the opening screen's Favorites card and Browse's Favorites. Now Playing's need
+     * none: those screens read them again as they show again.
+     */
+    var onFavorites: ((List<Entry>) -> Unit)? = null
 
     /**
      * Each answer, on the main thread, with whether the room plays its queue (only known when [media] is set), and the
@@ -206,6 +231,10 @@ class Player(private val a: Activity) {
     private val heart: ImageView? = a.findViewById(R.id.player_heart)
     private val roomName: TextView? = a.findViewById(R.id.player_room) // Now Playing's, in a row of its own.
     private val full = progress != null
+
+    // Whether the heart shows: always on Now Playing; on the mini player while it shows, from WIDE_DP of screen width.
+    // Without it, the favourites aren't read for it either.
+    private val hearts get() = full || bar && a.resources.configuration.screenWidthDp >= WIDE_DP
     // The mini player's progress, a ring in its Play/Pause circle; Now Playing has its bar.
     private val ring: Ring? = if (full) null else {
         Ring(a.resources.displayMetrics.density, a.getColor(R.color.ring)).also { toggle.foreground = it }
@@ -292,11 +321,41 @@ class Player(private val a: Activity) {
                 send(s.progress)
             }
         })
-        if (!full) view.setOnClickListener { onOpen() }
+        if (!full) {
+            view.setOnClickListener { onOpen() }
+            // The room's name, at the start of the line under the title, opens Room settings for it, as a link; anywhere
+            // else on the player opens Now Playing, as before. For TalkBack, an action of the player's.
+            roomLink()
+            view.accessibilityDelegate = object : View.AccessibilityDelegate() {
+                override fun onInitializeAccessibilityNodeInfo(host: View, info: AccessibilityNodeInfo) {
+                    super.onInitializeAccessibilityNodeInfo(host, info)
+                    if (rooms.isNotEmpty()) info.addAction(AccessibilityNodeInfo.AccessibilityAction(R.id.action_room_settings, a.getString(R.string.room_settings)))
+                }
+
+                override fun performAccessibilityAction(host: View, action: Int, args: Bundle?): Boolean {
+                    if (action != R.id.action_room_settings) return super.performAccessibilityAction(host, action, args)
+                    roomSettings()
+                    return true
+                }
+            }
+        } else {
+            // Now Playing's room, in the row at its foot: the same.
+            roomName?.setOnClickListener { roomSettings() }
+        }
         a.findViewById<View?>(R.id.player_previous)?.setOnClickListener { previous() }
         a.findViewById<View?>(R.id.player_next)?.setOnClickListener { command(Sonos::next) }
         a.findViewById<View?>(R.id.player_queue)?.setOnClickListener { open(QueueActivity::class.java) }
         heart?.setOnClickListener { toggleHeart() }
+        // The mini player's heart follows the width across WIDE_DP, as a window in split screen is resized: gone at once
+        // below it, and above it the room is asked at once, so it shows without waiting for the next poll.
+        if (!full) {
+            var wide = hearts
+            view.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+                if (hearts == wide) return@addOnLayoutChangeListener
+                wide = hearts
+                if (wide) refresh() else view.post { heart(room ?: return@post, null) } // Not inside the layout pass.
+            }
+        }
         shuffle?.setOnClickListener {
             command { r ->
                 val m = Sonos.mode(r) // Read right before, as for Play/Pause.
@@ -387,10 +446,8 @@ class Player(private val a: Activity) {
      * and the next comes a whole Polling interval later. Not for what has no length: it gets Previous as it is.
      */
     private fun previous() {
-        if (length > 0) {
-            base = 0
-            at = SystemClock.uptimeMillis()
-            settle = at + SETTLE_MS
+        if (clock.length > 0) {
+            clock.restart(SystemClock.uptimeMillis())
             retick()
         }
         command(Sonos::previous)
@@ -398,9 +455,7 @@ class Player(private val a: Activity) {
 
     private fun seek(to: Int) {
         quiet = SystemClock.uptimeMillis() + QUIET_MS
-        base = to * 1000L // The clock goes along at once; answers that don't fit it can't pull it back meanwhile.
-        at = SystemClock.uptimeMillis()
-        settle = at + SETTLE_MS
+        clock.seek(to, SystemClock.uptimeMillis())
         retick()
         command { Sonos.seek(it, to) }
     }
@@ -409,10 +464,8 @@ class Player(private val a: Activity) {
     private fun skip(d: Int) {
         if (progress?.isEnabled != true) return
         val now = SystemClock.uptimeMillis()
-        base = ((if (running) base + (now - at) else base) + d * 1000L).coerceIn(0, length * 1000L)
-        at = now
+        clock.skip(d, now)
         quiet = now + QUIET_MS
-        settle = now + SETTLE_MS
         retick()
         skips += d
         if (!skipping) skipNow()
@@ -488,26 +541,21 @@ class Player(private val a: Activity) {
     @Volatile
     private var live = false
 
-    // Between polls the progress counts on by itself, on a clock of its own while the room plays: each second shows for a
-    // second, at any interval and with no network. A poll corrects the clock only where it disagrees with the speaker.
+    // The position's own clock (see Clock), shown at each second it reaches. Main thread only.
     private val ui = Handler(Looper.getMainLooper())
-    private var base = 0L // The position in ms at [at] (uptime), whether it counts on, and the track's length in s.
-    private var at = 0L
-    private var running = false
-    private var length = 0
-    private var settle = 0L // Until then (uptime), a seek is landing.
+    private val clock = Clock()
     private val tick = object : Runnable {
         override fun run() {
             // Nothing to show on a screen without the mini player, as the Queue: its polls and volume buttons go on.
             if (!full && !bar) return
-            val ms = if (running) base + (SystemClock.uptimeMillis() - at) else base
+            val now = SystemClock.uptimeMillis()
             if (!seeking) {
-                val e = minOf(length.toLong(), ms / 1000).toInt()
+                val e = clock.shown(now)
                 progress?.progress = e
-                times(e, length)
-                ring?.set(e, length)
+                times(e, clock.length)
+                ring?.set(e, clock.length)
             }
-            if (running && length > 0) ui.postDelayed(this, 1000 - ms % 1000) // Right when the next second starts.
+            if (clock.running && clock.length > 0) ui.postDelayed(this, clock.untilNext(now)) // Right when the next second starts.
         }
     }
 
@@ -708,7 +756,10 @@ class Player(private val a: Activity) {
             Answer(
                 state, p, got, lastTrack,
                 if (all) Sonos.volume(r) else -1, if (all) Sonos.muted(r) else null,
-                if (all && full) Sonos.mode(r) else null, if (all && media) Sonos.queued(r) else null,
+                // The play mode for Now Playing, the queue check for the Queue: neither failing keeps the rest from
+                // showing, as the TV or line-in may not answer the mode. As the Mac app.
+                if (all && full) runCatching { Sonos.mode(r) }.getOrNull() else null,
+                if (all && media) runCatching { Sonos.queued(r) }.getOrNull() else null,
                 // Its own failure only leaves the line empty; the player still shows the rest.
                 if (full && p.uri.startsWith("x-sonos-htastream:")) runCatching { Sonos.tvFormat(r) }.getOrNull() else null,
                 household, now, lastStation,
@@ -735,7 +786,7 @@ class Player(private val a: Activity) {
             else -> null
         }
         saveableFor = from
-        saveableItem = didl?.let { Favorites.key(if (kind == Source.RADIO) st!!.uri else p.uri) to it }
+        saveableItem = didl?.let { Favorites.key(if (kind == Source.RADIO) st?.uri ?: p.uri else p.uri) to it }
         return saveableItem
     }
 
@@ -756,7 +807,8 @@ class Player(private val a: Activity) {
         heartKey = key
         h.shown = false
         later {
-            val f = runCatching { Sonos.favorites(r) }.getOrNull()
+            val s = favorites ?: return@later a.runOnUiThread { if (key == heartKey) heartKey = "" } // Asked again later.
+            val f = runCatching { Sonos.favorites(s) }.getOrNull()
             a.runOnUiThread {
                 if (key != heartKey) return@runOnUiThread
                 // Unknown: no heart, rather than a wrong one, and the next poll asks again.
@@ -772,13 +824,14 @@ class Player(private val a: Activity) {
     private fun toggleHeart() {
         val key = heartKey.ifEmpty { return }
         val didl = heartItem ?: return
+        val s = favorites ?: return
         val id = heartId
         if (id == "") return // A save on its way: the heart follows once it's in.
         heartId = if (id == null) "" else null
         drawHeart()
-        command { r ->
+        command {
             try {
-                if (id == null) Sonos.addFavorite(r, didl) else Sonos.removeFavorite(r, id)
+                if (id == null) Sonos.addFavorite(s.control, didl) else Sonos.removeFavorite(s.control, id)
             } catch (_: Exception) {
                 a.runOnUiThread {
                     a.toast(a.getString(if (id == null) R.string.favorite_error else R.string.unfavorite_error))
@@ -788,8 +841,9 @@ class Player(private val a: Activity) {
                     }
                 }
             } finally {
-                val f = runCatching { Sonos.favorites(r) }.getOrNull()
+                val f = runCatching { Sonos.favorites(s) }.getOrNull()
                 a.runOnUiThread {
+                    f?.let { onFavorites?.invoke(it) } // Also when what plays changed meanwhile: the save stands.
                     if (key != heartKey) return@runOnUiThread
                     if (f != null) {
                         heartId = match(f, key)
@@ -806,7 +860,7 @@ class Player(private val a: Activity) {
     private fun match(favorites: List<Entry>, key: String) =
         favorites.firstOrNull { it.fav?.uri?.isNotEmpty() == true && Favorites.key(it.fav.uri) == key }?.id
 
-    /** Filled in blue while what plays is a favourite, as Shuffle and Repeat while on; grey and outlined while it isn't. */
+    /** Filled in green while what plays is a favourite; grey and outlined while it isn't. */
     private fun drawHeart() {
         val on = heartId != null
         heart?.setImageResource(if (on) R.drawable.ic_heart_on else R.drawable.ic_heart)
@@ -849,11 +903,47 @@ class Player(private val a: Activity) {
         view.visibility = now
     }
 
+    /** Room settings, opened on the room the player follows: the one chosen on the main screen, in its group. */
+    private fun roomSettings() {
+        val all = rooms
+        if (all.isNotEmpty()) a.startActivity(RoomActivity.intent(a, all))
+    }
+
+    /**
+     * The room's name as a link in the mini player's line. Not a click of the line: the rest of it opens Now Playing, so
+     * TalkBack has Room settings as the player's own action instead (see init).
+     */
+    @SuppressLint("ClickableViewAccessibility")
+    private fun roomLink() = meta.setOnTouchListener { _, e -> roomTouch(e) }
+
+    private var onRoom = false // A touch began on the room's name in the mini player's line (main thread only).
+
+    /**
+     * A touch on the mini player's line: one that begins on the room's name, at its start, is the name's, and opens Room
+     * settings when it ends there; any other goes to the player, which opens Now Playing.
+     */
+    private fun roomTouch(e: MotionEvent): Boolean {
+        val n = room?.name?.length ?: 0
+        val l = meta.layout
+        val on = n > 0 && rooms.isNotEmpty() && l != null && meta.text.length >= n &&
+            e.x <= meta.totalPaddingLeft + l.getPrimaryHorizontal(n) - meta.scrollX
+        return when (e.actionMasked) {
+            MotionEvent.ACTION_DOWN -> on.also { onRoom = it }
+            MotionEvent.ACTION_UP -> onRoom.also {
+                if (onRoom && on) roomSettings()
+                onRoom = false
+            }
+            MotionEvent.ACTION_CANCEL -> onRoom.also { onRoom = false }
+            else -> onRoom
+        }
+    }
+
     /**
      * The speakers were grouped anew: the player moves to the group of the room chosen on the main screen, as that
      * screen does, when it isn't on it already. True when it moved.
      */
     private fun follow(t: Upnp.Topology): Boolean {
+        rooms = t.rooms // Room settings shows the household as it is now.
         val g = t.group(Prefs.room(a)) ?: return false
         if (g.same(room)) return false
         room = g // Asks the new group at once.
@@ -909,7 +999,7 @@ class Player(private val a: Activity) {
         }
         val st = answer?.station
         val kind = if (answer != null) source(answer.pos.uri, Prefs.model(a, r.id)) else Source.OTHER
-        if (full) heart(r, answer?.let { saveable(r, it, kind, t, st) })
+        heart(r, answer?.takeIf { hearts }?.let { saveable(r, it, kind, t, st) })
         val name = when {
             answer == null -> a.unreachable(r.name)
             t != null -> t.title
@@ -966,54 +1056,16 @@ class Player(private val a: Activity) {
         if (level.text.isEmpty() && v >= 0) level.text = v.toString()
         if (v >= 0 && !seeded) heard = true // Read from the room itself: the volume buttons may go from it.
 
-        // The clock, for Now Playing's bar and times and the mini player's ring.
-        run {
+        // The clock, for Now Playing's bar and times and the mini player's ring (see Clock). Not while the bar is dragged.
+        if (!seeking) {
             val p = answer.pos
-            if (seeking) return@run
-            val reported = p.elapsed * 1000L
-            val ms = if (running) base + (answer.at - at) else base // The clock, when the position arrived.
-            // The speaker rounds down: anywhere in the reported second, plus the reply's trip, the clock is right.
-            val top = reported + 1000 + SLACK_MS
-            val near = p.duration == length && ms >= reported - 1500 && ms <= top + 1500
-            // A seek landing: 0, the old place, or no length for a moment. Another track, by a length of its own, isn't.
-            val other = p.duration > 0 && p.duration != length
-            if (!near && !other && answer.at < settle) return@run
-            if (near) settle = 0
-            if (answer.state == "TRANSITIONING") { // Buffering: the clock waits where it is, whatever the speaker says.
-                if (p.duration != length) {
-                    // Unless it's another track, or a stream, as a radio station starting: its own length at once,
-                    // waiting at its own place, rather than the old track's progress until it plays.
-                    base = reported
-                    at = answer.at
-                    running = false
-                    length = p.duration
-                    progress?.isEnabled = p.duration > 0
-                    progress?.max = maxOf(p.duration, 1)
-                    skippable(p.duration > 0)
-                    retick()
-                } else if (running) {
-                    base = ms
-                    at = answer.at
-                    running = false
-                    retick()
-                }
-                return@run
+            val c = clock.answer(answer.state, p.elapsed, p.duration, answer.at)
+            if (c.length) {
+                progress?.isEnabled = p.duration > 0
+                progress?.max = maxOf(p.duration, 1)
+                skippable(p.duration > 0)
             }
-            progress?.isEnabled = p.duration > 0
-            progress?.max = maxOf(p.duration, 1)
-            skippable(p.duration > 0)
-            val play = answer.state == "PLAYING"
-            val to = when {
-                play != running || !near -> reported + 500 // Another track, a seek, play or pause: that second's middle.
-                ms < reported -> reported // Behind: just catches up.
-                ms > top -> reported + 999 // Ahead: just falls back into that second.
-                else -> return@run
-            }
-            base = to
-            at = answer.at
-            running = play
-            length = p.duration
-            retick()
+            if (c.moved) retick()
         }
         val m = answer.mode
         if (m != null && (mode?.upnp != m.upnp)) {

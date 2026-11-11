@@ -57,6 +57,21 @@
                 android:textSize="14sp" />
         </LinearLayout>
 
+        <!-- Now Playing's heart, here too where the screen is wide enough for it (Player.hearts), and as large: its glyph
+             28dp in 48dp, so it draws 12.33dp inside its box. -12.33dp at the start and 3.67dp at the end stand what it
+             draws 16dp from the title and from the Play circle, as the cover stands from the title. -->
+        <ImageView
+            android:id="@+id/player_heart"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:layout_marginStart="-12.33dp"
+            android:layout_marginEnd="3.67dp"
+            android:background="@drawable/control"
+            android:contentDescription="@string/favorite_add"
+            android:padding="10dp"
+            android:src="@drawable/ic_heart"
+            android:visibility="gone" />
+
         <ImageView
             android:id="@+id/player_toggle"
             android:layout_width="48dp"

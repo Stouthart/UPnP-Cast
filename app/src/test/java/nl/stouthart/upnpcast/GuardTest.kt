@@ -22,6 +22,11 @@ class GuardTest {
         assertFalse(literal("1.2.3.4.5"))
         assertFalse(literal("[fe80::1"))
         assertFalse(literal(""))
+        // Brackets hold hex digits and colons, with a zone after %: not any word.
+        assertFalse(literal("[abc]"))
+        assertFalse(literal("[evil.example.com]"))
+        assertFalse(literal("[fe80::1%]"))
+        assertFalse(literal("[fe80::g]"))
     }
 
     private fun ip(s: String) = InetAddress.getByName(s).address
@@ -52,6 +57,21 @@ class GuardTest {
         } finally {
             Locale.setDefault(was)
         }
+    }
+
+    @Test
+    fun durationsWithinBounds() {
+        assertEquals(340, seconds("0:05:40.000"))
+        assertEquals(3723, seconds("01:02:03"))
+        assertEquals(0, seconds("NOT_IMPLEMENTED"))
+        assertEquals(0, seconds("1::03")) // A part missing.
+        assertEquals(0, seconds("0:60:00")) // Minutes and seconds stop at 59.
+        assertEquals(0, seconds("0:00:60"))
+        assertEquals(0, seconds("-1:00:00"))
+        assertEquals(596523 * 3600 + 14 * 60 + 7, seconds("596523:14:07")) // Int.MAX_VALUE itself.
+        assertEquals(0, seconds("596523:14:08")) // One more: no wrap to a negative length.
+        assertEquals(0, seconds("596524:00:00"))
+        assertEquals(0, seconds("99999999999:00:00")) // Not even a number of hours an Int holds.
     }
 
     @Test

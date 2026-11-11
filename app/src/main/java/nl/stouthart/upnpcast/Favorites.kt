@@ -9,6 +9,8 @@ import java.net.URLEncoder
  * favourite. A server's track has no such id, so the Sonos app hides it either way; it shows, and plays, in this app.
  */
 object Favorites {
+    private fun esc(s: String) = Upnp.esc(s)
+
     private const val NS = "xmlns:dc=\"http://purl.org/dc/elements/1.1/\" xmlns:upnp=\"urn:schemas-upnp-org:metadata-1-0/upnp/\" " +
         "xmlns:r=\"urn:schemas-rinconnetworks-com:metadata-1-0/\" xmlns=\"urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/\""
     private const val STATION = "x-sonosapi-stream:"
@@ -68,5 +70,4 @@ object Favorites {
         else -> "audio/mpeg"
     }
 
-    private fun esc(s: String) = s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;")
 }

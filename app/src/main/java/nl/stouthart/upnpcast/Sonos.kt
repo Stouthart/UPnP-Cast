@@ -4,7 +4,6 @@ import android.os.SystemClock
 import android.util.Log
 import org.xmlpull.v1.XmlPullParser.END_DOCUMENT
 import org.xmlpull.v1.XmlPullParser.START_TAG
-import org.xmlpull.v1.XmlPullParserFactory
 import java.io.IOException
 import java.io.StringReader
 import java.net.URLEncoder
@@ -32,8 +31,7 @@ private const val FAVORITE_EXISTS = 803
 
 enum class Repeat { OFF, ALL, ONE }
 
-/** What the room is playing, from its TrackMetaData; [art] may be relative to the speaker. */
-/** The playing track; [uri] is its own, which the speaker can find a streaming service's cover for. */
+/** The playing track, from its TrackMetaData; [uri] is its own, which the speaker can find a streaming service's cover for. */
 class Track(
     val title: String, val artist: String, val album: String, val art: String, val format: String, val uri: String,
     val lossless: Boolean, // See Res.lossless: Now Playing shows the format in green.
@@ -67,11 +65,8 @@ class PartlyQueued(cause: Exception) : IOException(cause)
 class QueueChanged : IOException("The queue changed while it was read")
 
 /**
- * The room's track as raw TrackMetaData (parse it with [Sonos.track] only when it changed), its queue position,
- * and the times in seconds (0 when the source has none, as a stream).
- */
-/**
- * Where the room is; [uri] is the track's own, empty while nothing is loaded. It names the sources without metadata:
+ * Where the room is: its track as raw TrackMetaData ([meta], parsed with [Sonos.track] only when it changed), its queue
+ * position, and the times in seconds (0 when the source has none, as a stream). [uri] is the track's own, empty while nothing is loaded. It names the sources without metadata:
  * x-sonos-htastream:… for the TV input, and x-sonos-vli:<player>:2,spotify:<session> for Spotify Connect while paused.
  */
 class Position(val meta: String?, val index: Int, val elapsed: Int, val duration: Int, val uri: String)
@@ -97,11 +92,19 @@ class Mode(val shuffle: Boolean, val repeat: Repeat) {
     }
 }
 
-/** "H:MM:SS" in seconds; 0 for anything else, as NOT_IMPLEMENTED. */
+/**
+ * "H:MM:SS(.fff)" in seconds; 0 for anything else, as NOT_IMPLEMENTED: minutes and seconds 0 to 59, hours from 0, and
+ * the whole within an Int, where 596524 hours would have wrapped round to a negative length. The same in the Mac app.
+ */
 fun seconds(t: String?): Int {
     val p = t?.substringBefore('.')?.split(':') ?: return 0
     if (p.size != 3) return 0
-    return (p[0].toIntOrNull() ?: return 0) * 3600 + (p[1].toIntOrNull() ?: return 0) * 60 + (p[2].toIntOrNull() ?: return 0)
+    val h = p[0].toIntOrNull() ?: return 0
+    val m = p[1].toIntOrNull() ?: return 0
+    val s = p[2].toIntOrNull() ?: return 0
+    if (h < 0 || m !in 0..59 || s !in 0..59) return 0
+    val total = h * 3600L + m * 60L + s
+    return if (total <= Int.MAX_VALUE) total.toInt() else 0
 }
 
 /** "1:46" or "1:02:03". */
@@ -122,13 +125,20 @@ object Sonos {
     private const val RESUME_TRIES = 10
     private const val HAND_OVER_MS = 10_000 // Sonos answers a hand-over once it's done: 4 s with Spotify playing.
     private const val END_S = 2 // A hand-over's place is put back at most this short of the track's end.
-    private const val MEMBERS_AT_ONCE = 4 // A group's volume goes to this many of its players at a time.
     private const val QUEUE_PAGE = 100 // Sonos caps the items per Browse.
+
+    // A group's players set side by side, by threads that live only while they work.
+    private val members = Executors.newCachedThreadPool { r -> Thread(r, "volume").apply { isDaemon = true } }
 
     private fun avt(r: Room, action: String, args: String = ""): ByteArray = avt(r.host, action, args)
 
     private fun avt(host: String, action: String, args: String = "", wait: Int = Http.TIMEOUT): ByteArray = Http.soap(
         "http://$host/MediaRenderer/AVTransport/Control", "AVTransport", action, "<InstanceID>0</InstanceID>$args", wait,
+    )
+
+    /** An AVTransport question's answers, read as the reply is checked: what every poll asks goes this way. */
+    private fun avtArgs(host: String, action: String, vararg names: String): Array<String?> = Http.soapArgs(
+        "http://$host/MediaRenderer/AVTransport/Control", "AVTransport", action, "<InstanceID>0</InstanceID>", *names,
     )
 
     /**
@@ -255,7 +265,7 @@ object Sonos {
     fun copy(host: String, uri: String) = "http://$host/getaa?s=1&u=${URLEncoder.encode(uri, Charsets.UTF_8)}"
 
     /** Whether the room plays its queue, rather than e.g. Spotify or the TV. */
-    fun queued(r: Room) = Upnp.arg(avt(r, "GetMediaInfo"), "CurrentURI") == queueUri(r)
+    fun queued(r: Room) = avtArgs(r.host, "GetMediaInfo", "CurrentURI")[0] == queueUri(r)
 
     /** The household's music services by number, as [r]'s player lists them, as 31 Qobuz: ~48 KB, ~75 ms. */
     fun services(r: Room): Map<String, String> = serviceNames(
@@ -265,7 +275,7 @@ object Sonos {
 
     /** The radio station [r] plays: a stream's own track info may have neither its name nor its logo. */
     fun station(r: Room): Station {
-        val (uri, meta) = Upnp.args(avt(r, "GetMediaInfo"), "CurrentURI", "CurrentURIMetaData")
+        val (uri, meta) = avtArgs(r.host, "GetMediaInfo", "CurrentURI", "CurrentURIMetaData")
         val t = track(meta)
         return Station(t?.title.orEmpty(), t?.art.orEmpty(), uri.orEmpty())
     }
@@ -275,15 +285,15 @@ object Sonos {
      * made here or elsewhere.
      */
     fun group(r: Room): String {
-        val (id, players) = Upnp.args(
-            Http.soap("http://${r.host}/ZoneGroupTopology/Control", "ZoneGroupTopology", "GetZoneGroupAttributes"),
+        val (id, players) = Http.soapArgs(
+            "http://${r.host}/ZoneGroupTopology/Control", "ZoneGroupTopology", "GetZoneGroupAttributes", "",
             "CurrentZoneGroupID", "CurrentZonePlayerUUIDsInGroup",
         )
         return "$id $players"
     }
 
     /** PLAYING, PAUSED_PLAYBACK, STOPPED or TRANSITIONING. */
-    fun state(r: Room) = Upnp.arg(avt(r, "GetTransportInfo"), "CurrentTransportState") ?: ""
+    fun state(r: Room) = avtArgs(r.host, "GetTransportInfo", "CurrentTransportState")[0] ?: ""
 
     /** Pauses what plays, else plays; the state is read right before, never trusted from an earlier poll. */
     fun toggle(r: Room) {
@@ -346,26 +356,21 @@ object Sonos {
             return
         }
         // Side by side, so one slow to answer costs its own wait only, not the others' as well.
-        val pool = Executors.newFixedThreadPool(minOf(r.players.size, MEMBERS_AT_ONCE))
         var failed: Exception? = null
-        try {
-            val sets = r.players.map { h ->
-                pool.submit {
-                    Http.soap(
-                        "http://$h/MediaRenderer/RenderingControl/Control", "RenderingControl", "SetVolume",
-                        "<InstanceID>0</InstanceID><Channel>Master</Channel>$d",
-                    )
-                }
+        val sets = r.players.map { h ->
+            members.submit {
+                Http.soap(
+                    "http://$h/MediaRenderer/RenderingControl/Control", "RenderingControl", "SetVolume",
+                    "<InstanceID>0</InstanceID><Channel>Master</Channel>$d",
+                )
             }
-            for (f in sets) {
-                try {
-                    f.get()
-                } catch (e: ExecutionException) {
-                    failed = e.cause as? Exception ?: e
-                }
+        }
+        for (f in sets) {
+            try {
+                f.get()
+            } catch (e: ExecutionException) {
+                failed = e.cause as? Exception ?: e
             }
-        } finally {
-            pool.shutdownNow() // Done, or the player stopped waiting: writes not yet begun don't start.
         }
         failed?.let { throw it }
     }
@@ -379,7 +384,7 @@ object Sonos {
         if (r.members > 0) grc(r, "SetGroupMute", d) else rc(r, "SetMute", d)
     }
 
-    fun mode(r: Room) = Mode.of(Upnp.arg(avt(r, "GetTransportSettings"), "PlayMode") ?: "")
+    fun mode(r: Room) = Mode.of(avtArgs(r.host, "GetTransportSettings", "PlayMode")[0] ?: "")
 
     fun mode(r: Room, m: Mode) {
         avt(r, "SetPlayMode", "<NewPlayMode>${m.upnp}</NewPlayMode>")
@@ -408,7 +413,7 @@ object Sonos {
 
     private fun position(host: String): Position {
         val (index, meta, duration, elapsed, uri) =
-            Upnp.args(avt(host, "GetPositionInfo"), "Track", "TrackMetaData", "TrackDuration", "RelTime", "TrackURI")
+            avtArgs(host, "GetPositionInfo", "Track", "TrackMetaData", "TrackDuration", "RelTime", "TrackURI")
         return Position(meta, index?.toIntOrNull() ?: 0, seconds(elapsed), seconds(duration), uri ?: "")
     }
 
@@ -418,8 +423,7 @@ object Sonos {
      */
     fun track(didl: String?): Track? {
         if (didl.isNullOrBlank() || didl == "NOT_IMPLEMENTED") return null
-        val p = XmlPullParserFactory.newInstance().apply { isNamespaceAware = true }.newPullParser()
-            .apply { setInput(StringReader(noDtd(didl))) }
+        val p = Http.parsers.newPullParser().apply { setInput(StringReader(noDtd(didl))) }
         var title = ""
         var artist = ""
         var album = ""
@@ -505,8 +509,7 @@ object Sonos {
         // added plays another. Off while the queue fills and the track starts, until the last batch is in, then on
         // again: the speaker shuffles the rest and keeps that track playing, as the Sonos app does. Back on also after
         // a failure, if it can be.
-        val shuffled = if (plays) mode(r).takeIf { it.shuffle } else null
-        if (shuffled != null) mode(r, Mode(false, shuffled.repeat))
+        val shuffled = if (plays) mode(r).takeIf { it.shuffle } else null // No read, no change to the queue.
         var playing = false
         val from = if (plays) start else -1
         val ready = { n: Int ->
@@ -515,6 +518,7 @@ object Sonos {
             started()
         }
         try {
+            if (shuffled != null) mode(r, Mode(false, shuffled.repeat))
             when (how) {
                 How.REPLACE -> {
                     avt(r, "RemoveAllTracksFromQueue")
@@ -563,8 +567,6 @@ object Sonos {
     }
 
     /** The household's favourites (FV:2), as [r]'s player keeps them for every room. */
-    fun favorites(r: Room): List<Entry> = favorites(Server("", "", r.host, contentDirectory(r), null, favorites = true))
-
     /** The favourites at [s], a player's FV:2, over all their pages: ~8 KB for 8. */
     fun favorites(s: Server): List<Entry> {
         val out = ArrayList<Entry>()
@@ -578,9 +580,9 @@ object Sonos {
     }
 
     /** Saves [didl] (see Favorites) as a favourite; one for that link already is no failure, it's what was asked. */
-    fun addFavorite(r: Room, didl: String) {
+    fun addFavorite(control: String, didl: String) {
         try {
-            Http.soap(contentDirectory(r), "ContentDirectory", "CreateObject", "<ContainerID>FV:2</ContainerID><Elements>${Upnp.esc(didl)}</Elements>")
+            Http.soap(control, "ContentDirectory", "CreateObject", "<ContainerID>FV:2</ContainerID><Elements>${Upnp.esc(didl)}</Elements>")
         } catch (e: HttpException) {
             if (e.upnp != FAVORITE_EXISTS) throw e
         }
@@ -592,8 +594,6 @@ object Sonos {
         if (!id.startsWith("FV:2/")) throw IOException("Not a favourite: $id")
         Http.soap(control, "ContentDirectory", "DestroyObject", "<ObjectID>${Upnp.esc(id)}</ObjectID>")
     }
-
-    fun removeFavorite(r: Room, id: String) = removeFavorite(contentDirectory(r), id)
 
     /** Plays queue position [n] (1-based), switching the room to its queue first when it plays something else. */
     fun jump(r: Room, n: Int) = start(r, n, queued(r))
@@ -679,7 +679,7 @@ object Sonos {
         for (batch in tracks.chunked(BATCH)) {
             if (!wanted()) break
             // The lists are space-separated; MinimServer escapes spaces in its URLs, but another server might not.
-            val uris = batch.joinToString(" ") { it.res!!.url.replace(" ", "%20") }
+            val uris = batch.joinToString(" ") { (it.res ?: throw IOException("No link for ${it.title}")).url.replace(" ", "%20") }
             val meta = batch.joinToString(" ") { didl(it) }
             val reply = avt(
                 r, "AddMultipleURIsToQueue",
@@ -698,7 +698,7 @@ object Sonos {
 
     /** The track's metadata: Sonos shows it, and hands rate and bit depth back in TrackMetaData for Now Playing. */
     private fun didl(e: Entry): String {
-        val r = e.res!!
+        val r = e.res ?: throw IOException("No link for ${e.title}")
         val art = e.art?.let { "<upnp:albumArtURI>${Upnp.esc(it)}</upnp:albumArtURI>" } ?: ""
         val attrs = (if (r.duration.isEmpty()) "" else " duration=\"${Upnp.esc(r.duration)}\"") +
             (if (r.hz > 0) " sampleFrequency=\"${r.hz}\"" else "") + (if (r.bits > 0) " bitsPerSample=\"${r.bits}\"" else "")

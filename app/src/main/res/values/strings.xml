@@ -50,7 +50,7 @@
     <string name="more">More</string>
     <string name="unsupported_rate">Can\'t play %1$s. It\'s encoded at %2$s; Sonos plays up to %3$s.</string>
     <string name="cant_reach">Couldn\'t connect to %1$s.</string>
-    <string name="not_supported">Not supported on this source</string>
+    <string name="not_supported">Not supported on this source.</string>
     <string name="no_wifi">No WiFi connection</string>
     <string name="connect_wifi">Connect to a WiFi network to control your system.</string>
 

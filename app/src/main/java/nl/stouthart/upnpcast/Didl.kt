@@ -1,7 +1,6 @@
 package nl.stouthart.upnpcast
 
 import android.content.res.Resources
-import android.util.Xml
 import org.xmlpull.v1.XmlPullParser.END_DOCUMENT
 import org.xmlpull.v1.XmlPullParser.END_TAG
 import org.xmlpull.v1.XmlPullParser.START_TAG
@@ -131,7 +130,7 @@ object Didl {
      */
     fun parse(xml: String, url: (String) -> String?): List<Entry> {
         if (xml.isBlank()) return emptyList()
-        val p = Xml.newPullParser().apply { setInput(StringReader(noDtd(xml))) }
+        val p = Http.parsers.newPullParser().apply { setInput(StringReader(noDtd(xml))) }
         val out = ArrayList<Entry>()
         var id = ""
         var container = false
@@ -213,7 +212,7 @@ object Didl {
     fun favorites(xml: String, control: String): List<Entry> {
         if (xml.isBlank()) return emptyList()
         val base = URL(control)
-        val p = Xml.newPullParser().apply { setInput(StringReader(noDtd(xml))) }
+        val p = Http.parsers.newPullParser().apply { setInput(StringReader(noDtd(xml))) }
         val out = ArrayList<Entry>()
         var id = ""
         var title = ""

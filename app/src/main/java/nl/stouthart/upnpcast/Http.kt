@@ -9,14 +9,8 @@ import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.Socket
 import java.net.URL
-import java.util.concurrent.Executor
 import java.util.concurrent.ScheduledThreadPoolExecutor
 import java.util.concurrent.TimeUnit
-
-/** Runs [work] on [e], or not at all once the screen that owns [e] has shut it down: never a crash. */
-fun later(e: Executor, work: () -> Unit) {
-    runCatching { e.execute(work) }
-}
 
 /** A device answered with an error; [upnp] is the SOAP fault's errorCode, or 0. */
 class HttpException(val code: Int, val upnp: Int) :
@@ -32,6 +26,9 @@ object Http {
     private const val MAX_BODY = 8 shl 20 // No sane reply is this big: a search of all 1,891 tracks is 2.4 MB.
     private const val MAX_LINE = 8192
     private const val MAX_HEADERS = 100
+
+    // One factory for every parser: making one looks the parser class up each time, which every reply paid for.
+    internal val parsers: XmlPullParserFactory = XmlPullParserFactory.newInstance().apply { isNamespaceAware = true }
 
     fun get(url: String): ByteArray = send(URL(url), "GET", "", null)
 
@@ -51,14 +48,37 @@ object Http {
     }
 
     /**
+     * As soap(), with the output arguments [names] read in the same pass that checks the reply, rather than by a second
+     * one over it: a Browse page is 150 KB, the library's whole track list 2.4 MB. In the order of [names]; null for
+     * one that isn't there.
+     */
+    fun soapArgs(control: String, service: String, action: String, args: String, vararg names: String): Array<String?> {
+        val type = "urn:schemas-upnp-org:service:$service:1"
+        val body = "<?xml version=\"1.0\" encoding=\"utf-8\"?><s:Envelope xmlns:s=\"http://schemas.xmlsoap.org/soap/" +
+            "envelope/\" s:encodingStyle=\"http://schemas.xmlsoap.org/soap/encoding/\"><s:Body><u:$action xmlns:u=\"" +
+            "$type\">$args</u:$action></s:Body></s:Envelope>"
+        val headers = "Content-Type: text/xml; charset=\"utf-8\"\r\nSOAPACTION: \"$type#$action\"\r\n"
+        val reply = send(URL(control), "POST", headers, body.toByteArray())
+        val out = arrayOfNulls<String>(names.size)
+        if (!check(reply, action, service, names, out)) throw IOException("No $action response")
+        return out
+    }
+
+    /**
      * Whether [reply] is [action]'s own answer: one complete SOAP document, its Envelope's Body holding that action's
      * response alone, in [service]'s namespace at any version, or none, as a sloppy server may send it; no DTD. A web
      * page, an empty or unfinished reply, a fault sent with 200, or the answer's tag in a comment or CDATA isn't taken
      * as done, so no step that depends on it follows, as Play after SetAVTransportURI. Read whole: ~15 ms for the
      * largest reply, a search of the whole library, which its caller reads again anyway.
      */
-    fun acknowledges(reply: ByteArray, action: String, service: String? = null): Boolean = runCatching {
-        val p = XmlPullParserFactory.newInstance().apply { isNamespaceAware = true }.newPullParser()
+    fun acknowledges(reply: ByteArray, action: String, service: String? = null): Boolean = check(reply, action, service, emptyArray(), arrayOfNulls(0))
+
+    /**
+     * acknowledges(), also reading the answer's arguments [names] into [out] as it goes: the text of each, with its
+     * entities and CDATA resolved, as nextText() reads it.
+     */
+    internal fun check(reply: ByteArray, action: String, service: String?, names: Array<out String>, out: Array<String?>): Boolean = runCatching {
+        val p = parsers.newPullParser()
         p.setInput(reply.inputStream(), null)
         val envelope = "http://schemas.xmlsoap.org/soap/envelope/"
         val type = service?.let { "urn:schemas-upnp-org:service:$it:" }
@@ -85,10 +105,28 @@ object Http {
                         ns.startsWith(type) && ns.removePrefix(type).let { v -> v.isNotEmpty() && v.all { it in '0'..'9' } }))
                     answer = true
                 }
+                4 -> if (answer) {
+                    val i = names.indexOf(p.name)
+                    if (i >= 0 && out[i] == null) out[i] = text(p)
+                }
             }
         }
         answer && p.depth == 0
     }.getOrDefault(false)
+
+    /** The text of the element [p] stands at, its entities and CDATA resolved, as nextText() does; no element inside it. */
+    private fun text(p: XmlPullParser): String {
+        val sb = StringBuilder()
+        val depth = p.depth
+        while (true) {
+            when (p.nextToken()) {
+                XmlPullParser.TEXT, XmlPullParser.CDSECT -> sb.append(p.text)
+                XmlPullParser.ENTITY_REF -> sb.append(p.text ?: throw IOException("Unknown entity"))
+                XmlPullParser.END_TAG -> if (p.depth == depth) return sb.toString()
+                XmlPullParser.START_TAG, XmlPullParser.END_DOCUMENT, XmlPullParser.DOCDECL -> throw IOException("Not an argument")
+            }
+        }
+    }
 
     // Writes have no timeout of their own: at the deadline this closes the socket, which ends any I/O still on it.
     private val watchdog = ScheduledThreadPoolExecutor(1) { r -> Thread(r, "http-deadline").apply { isDaemon = true } }
@@ -117,43 +155,59 @@ object Http {
                 s.connect(InetSocketAddress(InetAddress.getByName(u.host), port), TIMEOUT) // A literal: no lookup.
                 s.getOutputStream().write(if (body == null) head else head + body)
 
-                val i = s.getInputStream().buffered(16384)
-                val code = line(i, end).split(' ', limit = 3).getOrNull(1)?.toIntOrNull() ?: throw IOException("Not HTTP")
-                var length = -1L
-                var chunked = false
-                var headers = 0
-                while (true) {
-                    val h = line(i, end)
-                    if (h.isEmpty()) break
-                    if (++headers > MAX_HEADERS) throw IOException("Too many headers")
-                    val c = h.indexOf(':')
-                    if (c < 0) continue
-                    val name = h.substring(0, c).trim()
-                    val value = h.substring(c + 1).trim()
-                    if (name.equals("Content-Length", true)) length = value.toLongOrNull() ?: -1
-                    else if (name.equals("Transfer-Encoding", true)) chunked = value.contains("chunked", true)
-                }
-
-                val out = ByteArrayOutputStream(if (length in 0..MAX_BODY) length.toInt() else 16384)
-                val buf = ByteArray(16384)
-                when {
-                    chunked -> while (true) {
-                        val n = line(i, end).substringBefore(';').trim().toIntOrNull(16)
-                        if (n == null || n < 0) throw IOException("Bad chunk") // A negative size would read to the end.
-                        if (n == 0) break
-                        copy(i, out, buf, n.toLong(), end)
-                        line(i, end) // The CRLF that ends each chunk.
-                    }
-                    length >= 0 -> copy(i, out, buf, length, end)
-                    else -> copy(i, out, buf, -1, end) // Until the device closes the connection.
-                }
-                val b = out.toByteArray()
+                val (code, b) = reply(s.getInputStream().buffered(16384), end)
                 if (code != 200) throw HttpException(code, upnpError(b))
                 return b
             } finally {
                 kill.cancel(false)
             }
         }
+    }
+
+    /**
+     * The reply on [i], before [end] (nanoTime): its status code and its body, by Content-Length, chunked, or up to the
+     * close. Within the limits above; refused, as the Mac app's URLSession refuses them: a chunk of a negative size,
+     * which would read to the end, or one not ended by CRLF; a Content-Length that isn't digits alone, or two that
+     * differ; a header or status line the close cuts short. Trailers after the last chunk are read past.
+     */
+    internal fun reply(i: InputStream, end: Long): Pair<Int, ByteArray> {
+        val code = line(i, end).split(' ', limit = 3).getOrNull(1)?.toIntOrNull() ?: throw IOException("Not HTTP")
+        var length = -1L
+        var chunked = false
+        var headers = 0
+        while (true) {
+            val h = line(i, end)
+            if (h.isEmpty()) break
+            if (++headers > MAX_HEADERS) throw IOException("Too many headers")
+            val c = h.indexOf(':')
+            if (c < 0) continue
+            val name = h.substring(0, c).trim()
+            val value = h.substring(c + 1).trim()
+            if (name.equals("Content-Length", true)) {
+                val declared = value.toLongOrNull() ?: throw IOException("Bad length")
+                if (value.any { it !in '0'..'9' } || length >= 0 && length != declared) throw IOException("Bad length")
+                length = declared
+            }
+            else if (name.equals("Transfer-Encoding", true)) chunked = value.contains("chunked", true)
+        }
+        val out = ByteArrayOutputStream(if (length in 0..MAX_BODY) length.toInt() else 16384)
+        val buf = ByteArray(16384)
+        when {
+            chunked -> while (true) {
+                val n = line(i, end).substringBefore(';').trim().toIntOrNull(16)
+                if (n == null || n < 0) throw IOException("Bad chunk")
+                if (n == 0) {
+                    var trailers = 0
+                    while (line(i, end).isNotEmpty()) if (++trailers > MAX_HEADERS) throw IOException("Too many trailers")
+                    break
+                }
+                copy(i, out, buf, n.toLong(), end)
+                if (line(i, end).isNotEmpty()) throw IOException("Bad chunk ending") // The CRLF that ends each chunk.
+            }
+            length >= 0 -> copy(i, out, buf, length, end)
+            else -> copy(i, out, buf, -1, end) // Until the device closes the connection.
+        }
+        return code to out.toByteArray()
     }
 
     private fun late(end: Long) {
@@ -181,7 +235,8 @@ object Http {
         val sb = StringBuilder(64)
         while (true) {
             val c = i.read()
-            if (c < 0 || c == '\n'.code) return sb.toString()
+            if (c < 0) throw IOException("Header cut short")
+            if (c == '\n'.code) return sb.toString()
             if (c != '\r'.code) sb.append(c.toChar())
             if (sb.length > MAX_LINE) throw IOException("Header too long")
             late(end) // Per byte: these reads come from the buffer, so a clock read is all it costs.
@@ -193,7 +248,7 @@ object Http {
      * the factory's parser as acknowledges(), so it reads on the computer too.
      */
     internal fun upnpError(b: ByteArray): Int = runCatching {
-        val p = XmlPullParserFactory.newInstance().apply { isNamespaceAware = true }.newPullParser()
+        val p = parsers.newPullParser()
         p.setInput(noDtd(b).inputStream(), null)
         while (p.next() != XmlPullParser.END_DOCUMENT) {
             if (p.eventType == XmlPullParser.START_TAG && p.name == "errorCode") return@runCatching p.nextText().trim().toIntOrNull() ?: 0
