@@ -295,9 +295,14 @@ object Sonos {
     /** PLAYING, PAUSED_PLAYBACK, STOPPED or TRANSITIONING. */
     fun state(r: Room) = avtArgs(r.host, "GetTransportInfo", "CurrentTransportState")[0] ?: ""
 
-    /** Pauses what plays, else plays; the state is read right before, never trusted from an earlier poll. */
-    fun toggle(r: Room) {
+    /**
+     * Pauses what plays, else plays; the state is read right before, never trusted from an earlier poll. [to]: only
+     * towards playing (true) or paused (false), else nothing, as the system's media player's Play and Pause ask, also
+     * after the room was started or stopped elsewhere. The same in the Mac app.
+     */
+    fun toggle(r: Room, to: Boolean? = null) {
         val s = state(r)
+        if (to != null && to == (s == "PLAYING" || s == "TRANSITIONING")) return // Already so.
         if (s == "PLAYING" || s == "TRANSITIONING") avt(r, "Pause") else avt(r, "Play", "<Speed>1</Speed>")
     }
 

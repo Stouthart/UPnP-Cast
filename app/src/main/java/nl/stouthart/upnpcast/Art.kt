@@ -1,5 +1,6 @@
 package nl.stouthart.upnpcast
 
+import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Matrix
@@ -19,6 +20,12 @@ import java.util.concurrent.TimeUnit
  */
 class Art(val px: Int, private val also: Int = 0, private val loaded: (String) -> Unit) {
     companion object {
+        /** Now Playing's cover side, in pixels: the screen's short side, 1200 at most. Also the media player's. */
+        fun side(c: Context) = c.resources.displayMetrics.let { minOf(it.widthPixels, it.heightPixels, 1200) }
+
+        /** [url] at [size] if a screen or the media player has it already. */
+        fun cached(url: String, size: Int): Bitmap? = cache.get("$size $url")
+
         // One cache for every screen, an eighth of the heap in all: screens on the back stack stay alive, and a cover
         // already shown at a size is there at once on the next screen that shows it at that size.
         private val cache = object : LruCache<String, Bitmap>((Runtime.getRuntime().maxMemory() / 8).toInt()) {
@@ -28,6 +35,9 @@ class Art(val px: Int, private val also: Int = 0, private val loaded: (String) -
 
     private val loading = HashSet<String>() // Main thread only, like failed.
     private val queued = ConcurrentHashMap.newKeySet<String>() // Fetches not begun: pause() drops these alone.
+    // The rows showing each URL now: a fetch whose turn comes when no row wants it any more, as one scrolled past, is
+    // dropped, as in the Mac app; a row showing it again asks anew.
+    private val wanted = ConcurrentHashMap<String, Int>()
     private val failed = HashSet<String>()
     private val main = Handler(Looper.getMainLooper())
     private val pool = ThreadPoolExecutor(
@@ -49,19 +59,50 @@ class Art(val px: Int, private val also: Int = 0, private val loaded: (String) -
 
     /** Shows [url]'s thumbnail in [v], or the [fallback] icon, centred at its own size, until it arrives or for good. */
     fun show(v: ImageView, url: String?, fallback: Int) {
+        val was = v.tag as? String
+        if (was != url) {
+            was?.let { wanted.computeIfPresent(it) { _, n -> (n - 1).takeIf { it > 0 } } }
+            url?.let { wanted.merge(it, 1, Int::plus) }
+        }
         v.tag = url
         val b = url?.let { get(it) }
         if (b != null) return fill(v, b)
         v.scaleType = ImageView.ScaleType.CENTER
         v.setImageResource(fallback)
-        if (url == null || url in failed || !loading.add(url)) return
+        if (url != null) fetch(url)
+    }
+
+    /**
+     * For a holder without a view, as the media player in the background: [url] fetched, then [loaded]; the one before
+     * not wanted any more.
+     */
+    fun want(url: String?) {
+        wanted.clear()
+        if (url == null) return
+        wanted[url] = 1
+        if (get(url) == null) fetch(url)
+    }
+
+    private fun fetch(url: String) {
+        if (url in failed || !loading.add(url)) return
         queued += url
         later(pool) {
             queued -= url
-            val bytes = runCatching { Http.get(url) }.getOrNull()
-            val t = bytes?.let { runCatching { thumb(it, px) }.getOrNull() }
-            val big = if (t == null || also <= 0 || cache.get(key(url, also)) != null) null
-            else runCatching { thumb(bytes, also) }.getOrNull()
+            if (!wanted.containsKey(url)) { // No row wants it any more.
+                main.post { loading.remove(url) }
+                return@later
+            }
+            // Kept on disk from a session before (CoverDisk): no request at all. Else fetched, and kept there too.
+            val kept = CoverDisk.get(key(url))?.let { runCatching { BitmapFactory.decodeByteArray(it, 0, it.size) }.getOrNull() }
+            val bytes = if (kept != null) null else runCatching { Http.get(url) }.getOrNull()
+            val t = kept ?: bytes?.let { runCatching { thumb(it, px) }.getOrNull() }?.also { CoverDisk.put(key(url), it) }
+            val big = when {
+                t == null || also <= 0 || cache.get(key(url, also)) != null -> null
+                bytes != null -> runCatching { thumb(bytes, also) }.getOrNull()?.also { CoverDisk.put(key(url, also), it) }
+                // Kept on disk: the second size too, as it was kept with it. Without it, Now Playing and the media
+                // player had none until a screen fetched it at that size.
+                else -> CoverDisk.get(key(url, also))?.let { runCatching { BitmapFactory.decodeByteArray(it, 0, it.size) }.getOrNull() }
+            }
             main.post {
                 loading.remove(url)
                 if (t == null) failed += url

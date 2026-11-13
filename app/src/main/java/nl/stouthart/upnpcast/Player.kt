@@ -6,6 +6,7 @@ import android.animation.AnimatorSet
 import android.animation.ValueAnimator
 import android.annotation.SuppressLint
 import android.app.Activity
+import android.content.Context
 import android.content.Intent
 import android.content.res.ColorStateList
 import android.os.Handler
@@ -19,6 +20,7 @@ import android.os.Bundle
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
+import android.view.WindowInsets
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.animation.LinearInterpolator
 import android.widget.ImageView
@@ -33,10 +35,10 @@ import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
-private const val QUIET_MS = 1500L // After a change, polls leave that control alone until it has landed.
 private const val SEED_MS = 15_000L // How old what another screen showed may be for the next to start from it.
 private const val HOSTS = "hosts"
-private const val META_AGAIN_MS = 60_000L // After a failed read of a station or of the speakers' music services.
+// After a failed read of a station or of the speakers' music services; the media player's service waits as long.
+const val META_AGAIN_MS = 60_000L
 private const val GLIDE_DP_S = 30f // The mini player's title slides at the speed of Android's own scrolling text.
 private const val GLIDE_WAIT_MS = 1200L // Before it slides, as Android's does; and a pause at its end, then back.
 // Now Playing's controls stand at most this far apart, by what they draw: on a wide screen, as a tablet's, the row stays
@@ -96,19 +98,55 @@ class Player(private val a: Activity) {
         @Volatile
         var rooms: List<Room> = emptyList()
 
-        /**
-         * The household's favourites, at the player the main screen found them at, where its Favorites card and Browse
-         * read them: the heart reads and saves there too, on every screen and whichever room plays, as in the Mac app.
-         * Each player keeps its own copy, which takes a while to follow a change made at another: read at the room
-         * that plays, the heart showed the copy before a change made in another room, and a tap did nothing or the
-         * opposite. Until the main screen has found them, no heart, as in the Mac app.
-         */
-        @Volatile
-        var favorites: Server? = null
+        // What a player showed last for each room, main thread only: the next screen's player on that room starts from
+        // it, and so does a switch back to a room seen in the last SEED_MS, as in the Mac app (seen).
+        private val last = HashMap<String, Last>()
 
-        // What a player showed last, main thread only: the next screen's player on the same room starts from it, so
-        // its cover, title and volume are there at once rather than after its first questions to the room.
-        private var last: Last? = null
+        /** What plays, as named for the screens and the system's media player: [title], who it's [by], its [cover]. */
+        class Named(val title: String, val by: String, val cover: String?)
+
+        /**
+         * [uri] on [r], with its track [t] and radio [st], named: for a screen's player and, in the background, the
+         * media player's service (MediaControls), so both say the same.
+         */
+        fun name(c: Context, r: Room, uri: String, kind: Source, t: Track?, st: Station?, hosts: Set<String>): Named {
+            val title = when {
+                t != null -> t.title
+                // Sources without metadata, known by their URI: the TV input, and Spotify Connect while paused; a radio
+                // station by its name.
+                uri.startsWith("x-sonos-htastream:") -> c.getString(R.string.tv)
+                uri.startsWith("x-sonos-vli:") && ",spotify:" in uri -> c.getString(R.string.spotify)
+                st != null && st.name.isNotEmpty() -> st.name
+                else -> c.getString(R.string.no_content)
+            }
+            // A radio stream: its station where the artist goes, as the Sonos app has it, and its logo as the cover. Not
+            // twice: between songs a station may send its own name as the song.
+            val by = t?.artist?.ifEmpty { st?.name?.takeIf { it != t.title } }.orEmpty()
+            val cover = when {
+                // Sonos Radio: the speaker's copy of a track's cover can be another station's logo; its station's is right.
+                kind == Source.SONOS_RADIO -> st?.let { cover(r, it.art, it.uri, hosts) }
+                t != null && t.art.isNotEmpty() -> cover(r, t.art, t.uri, hosts)
+                st != null -> cover(r, st.art, st.uri, hosts)
+                else -> null
+            }
+            return Named(title, by, cover)
+        }
+
+        /**
+         * The cover's URL when it is on the speaker (often relative, as /getaa?…) or on a known server. One on the
+         * internet, as Spotify's, comes from the speaker too: it fetches the cover of the track's [uri] itself, so the
+         * phone never leaves the local network. Else none. [hosts]: the servers the screen was told of.
+         */
+        fun cover(r: Room, ref: String, uri: String, hosts: Set<String>): String? {
+            if (ref.isEmpty()) return null
+            val u = runCatching { URL(URL("http://${r.host}/"), ref) }.getOrNull() ?: return null
+            // A server's own: one this screen was told of, or any the main screen found since, as the track playing may
+            // be another server's than the one browsed.
+            if (u.protocol == "http" && (u.host == r.host.substringBefore(':') || u.host in hosts || u.host in servers)) {
+                return u.toString()
+            }
+            return if (uri.isEmpty()) null else Sonos.copy(r.host, uri)
+        }
     }
 
     /** [answer] for [room]; [slow]: the uptime its volume, mute and play mode were read, maybe by an earlier poll. */
@@ -136,10 +174,8 @@ class Player(private val a: Activity) {
             gen++
             // Whatever the room before still had to send stays there, and its volume isn't this one's: the number
             // clears and the volume buttons wait until this room's own is read.
-            wanted = -1
-            sending = false
+            volumeSender.forget()
             skips = 0
-            quiet = 0L
             playSent.out = 0
             muteSent.out = 0
             level.text = ""
@@ -240,26 +276,22 @@ class Player(private val a: Activity) {
         Ring(a.resources.displayMetrics.density, a.getColor(R.color.ring)).also { toggle.foreground = it }
     }
 
-    // The heart: what plays now as a favourite (see Favorites), by its key, its DIDL to save it, and the favourite's id
-    // while it is one: null when it isn't, "" while a save is on its way. Main thread only.
-    private var heartKey = ""
-    private var heartItem: String? = null
-    private var heartId: String? = null
     private var saveableFor: List<Any?> = emptyList() // What saveable() last built its answer from, and that answer.
     private var saveableItem: Pair<String, String>? = null
 
     // Now Playing's cover by the screen's short side, which covers its widest in either orientation; the mini player
     // makes that size too, from the same download, so Now Playing has it the moment it opens.
-    private val covers: Art = a.resources.displayMetrics.let { m ->
-        val big = minOf(m.widthPixels, m.heightPixels, 1200)
-        if (full) Art(big) { url -> loaded(url) } else Art((48 * m.density).toInt(), big) { url -> loaded(url) }
+    private val covers: Art = Art.side(a).let { big ->
+        if (full) Art(big) { url -> loaded(url) } else Art((48 * a.resources.displayMetrics.density).toInt(), big) { url -> loaded(url) }
     }
 
     private fun loaded(url: String) {
         if (art.tag == url) covers[url]?.let { covers.fill(art, it) }
+        MediaControls.covered(url) // At Now Playing's size from the same download: the media player's too.
     }
     private var exec: ScheduledExecutorService? = null
     private var volumes: ExecutorService? = null // SetVolume, one at a time, beside exec.
+    private var reads: ExecutorService? = null // A poll's questions, side by side, as the Mac app asks them.
 
     @Volatile
     private var gen = 0 // Drops a poll's answer once the room changed or the screen went away.
@@ -272,10 +304,11 @@ class Player(private val a: Activity) {
     private var mode: Mode? = null
     private var dragging = false
     private var seeking = false
-    private var quiet = 0L
-    private var wanted = -1 // The volume still to send; one SetVolume is in flight at most.
-    private var landed = 0L // The uptime the last SetVolume came back.
-    private var sending = false
+    private val volumeSender = VolumeSender().apply { send = ::sendVolume } // The volume, one change out at a time.
+
+    init {
+        CoverDisk.init(a.applicationContext) // Every screen has a player: covers on disk from the first one on.
+    }
     private var skips = 0 // Quick skip seconds tapped while one is out: they go as one once it's back.
     private var skipping = false
     private var keyed = false // The last volume button press went to the room, so its release does too.
@@ -309,7 +342,7 @@ class Player(private val a: Activity) {
         volume.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(s: SeekBar, v: Int, user: Boolean) {
                 level.text = v.toString()
-                if (user) send(v)
+                if (user) volumeSender.want(v)
             }
 
             override fun onStartTrackingTouch(s: SeekBar) {
@@ -318,7 +351,7 @@ class Player(private val a: Activity) {
 
             override fun onStopTrackingTouch(s: SeekBar) {
                 dragging = false
-                send(s.progress)
+                volumeSender.want(s.progress)
             }
         })
         if (!full) {
@@ -345,7 +378,11 @@ class Player(private val a: Activity) {
         a.findViewById<View?>(R.id.player_previous)?.setOnClickListener { previous() }
         a.findViewById<View?>(R.id.player_next)?.setOnClickListener { command(Sonos::next) }
         a.findViewById<View?>(R.id.player_queue)?.setOnClickListener { open(QueueActivity::class.java) }
-        heart?.setOnClickListener { toggleHeart() }
+        heart?.setOnClickListener {
+            Heart.toggle({ work -> command { work() } }, { save ->
+                a.toast(a.getString(if (save) R.string.favorite_error else R.string.unfavorite_error))
+            }, { f -> f?.let { onFavorites?.invoke(it) } })
+        }
         // The mini player's heart follows the width across WIDE_DP, as a window in split screen is resized: gone at once
         // below it, and above it the room is asked at once, so it shows without waiting for the next poll.
         if (!full) {
@@ -353,7 +390,18 @@ class Player(private val a: Activity) {
             view.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
                 if (hearts == wide) return@addOnLayoutChangeListener
                 wide = hearts
-                if (wide) refresh() else view.post { heart(room ?: return@post, null) } // Not inside the layout pass.
+                if (wide) refresh() else view.post(drawHeart) // Not inside the layout pass.
+            }
+            // Docked at the foot, its colour on under the gesture or navigation bar and its controls above it: while it
+            // shows, it takes the bar's inset as its own bottom padding, in place of the screen's (the screen pads for
+            // the other bars as fitsSystemWindows did). Hidden, as on the Queue, the screen keeps it. Again at each change.
+            val below = view.paddingBottom
+            (view.parent as View).setOnApplyWindowInsetsListener { v, insets ->
+                val i = insets.getInsets(WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout())
+                val docked = view.visibility == View.VISIBLE
+                v.setPadding(i.left, i.top, i.right, if (docked) 0 else i.bottom)
+                view.setPadding(view.paddingLeft, view.paddingTop, view.paddingRight, below + if (docked) i.bottom else 0)
+                WindowInsets.CONSUMED
             }
         }
         shuffle?.setOnClickListener {
@@ -454,7 +502,6 @@ class Player(private val a: Activity) {
     }
 
     private fun seek(to: Int) {
-        quiet = SystemClock.uptimeMillis() + QUIET_MS
         clock.seek(to, SystemClock.uptimeMillis())
         retick()
         command { Sonos.seek(it, to) }
@@ -465,7 +512,6 @@ class Player(private val a: Activity) {
         if (progress?.isEnabled != true) return
         val now = SystemClock.uptimeMillis()
         clock.skip(d, now)
-        quiet = now + QUIET_MS
         retick()
         skips += d
         if (!skipping) skipNow()
@@ -500,7 +546,9 @@ class Player(private val a: Activity) {
 
     /** Asks the room at the Polling interval from the main screen: 2 s by default, up to 10 s. Watches WiFi meanwhile. */
     fun start() {
-        heartKey = "" // The favourites are read again: one may have been saved or removed meanwhile, also elsewhere.
+        Heart.forget() // The favourites are read again: one may have been saved or removed meanwhile, also elsewhere.
+        Heart.watch(drawHeart)
+        MediaControls.watch(refreshNow) // This screen asks the room now, for the media player too.
         Lan.start(a, lan)
         if (full && Lan.wifi == null) a.finish() // As when WiFi went while the app was away.
         place()
@@ -511,6 +559,7 @@ class Player(private val a: Activity) {
         val s = Prefs.poll(a).toLong()
         exec = Executors.newSingleThreadScheduledExecutor().apply { scheduleWithFixedDelay(::poll, 0, s, TimeUnit.SECONDS) }
         volumes = Executors.newSingleThreadExecutor()
+        reads = Executors.newCachedThreadPool()
         heard = false // While away, the volume may have changed elsewhere: the buttons wait until it's read again.
         // stop() halted the clock's ticks, and an answer that agrees with the clock doesn't restart them: back from
         // another app within the same track, the progress would stand still. Where the clock is now, ticking on.
@@ -518,13 +567,14 @@ class Player(private val a: Activity) {
     }
 
     fun stop() {
+        Heart.unwatch(drawHeart)
+        MediaControls.unwatch(refreshNow)
         sliding?.cancel()
         Lan.stop(lan)
         live = false
         gen++
         // shutdownNow drops a volume change or quick skip still queued, so nothing is in flight any more.
-        wanted = -1
-        sending = false
+        volumeSender.forget()
         skips = 0
         skipping = false
         playSent.out = 0
@@ -533,6 +583,8 @@ class Player(private val a: Activity) {
         exec = null
         volumes?.shutdownNow()
         volumes = null
+        reads?.shutdownNow()
+        reads = null
         ui.removeCallbacks(tick)
         covers.pause()
     }
@@ -620,6 +672,8 @@ class Player(private val a: Activity) {
         poll()
     }
 
+    private val refreshNow: () -> Unit = { refresh() } // For the media player: a command sent there, so read again.
+
     fun open(screen: Class<out Activity>) {
         val r = room ?: return
         a.startActivity(put(Intent(a, screen), r, hosts))
@@ -682,45 +736,40 @@ class Player(private val a: Activity) {
         val v = (volume.progress + if (up) step else -step).coerceIn(0, 100)
         if (v != volume.progress) {
             volume.progress = v // Not the user's: its listener shows the number, and the send is here.
-            send(v)
+            volumeSender.want(v)
         }
         return true
     }
 
-    private fun send(v: Int) {
-        wanted = v
-        quiet = SystemClock.uptimeMillis() + QUIET_MS
-        if (sending) return
-        val r = room ?: return
-        sending = true
-        wanted = -1
+    /** VolumeSender's way out: SetVolume [v] on its own thread, [landed] once it's back, for the room it went to. */
+    private fun sendVolume(v: Int, landed: () -> Unit): Boolean {
+        val r = room ?: return false
+        val pool = volumes ?: return false // Stopped: nothing goes out.
         val g = gen
-        val sent = runCatching {
-            volumes?.execute {
+        return runCatching {
+            pool.execute {
                 runCatching { Sonos.volume(r, v) }
                 fresh = true // The next poll reads the volume back, once the quiet time lets it show.
-                a.runOnUiThread {
-                    if (g != gen) return@runOnUiThread // A room switch or stop() has reset all this meanwhile.
-                    landed = SystemClock.uptimeMillis()
-                    sending = false
-                    if (wanted >= 0) send(wanted)
-                }
+                a.runOnUiThread { if (g == gen) landed() } // Not once a room switch or stop() has reset it meanwhile.
             }
         }.isSuccess
-        if (volumes == null || !sent) sending = false // Stopped: nothing went out.
     }
 
     private fun poll() {
         if (!live) return
         val r = room ?: return
         val g = gen
+        val pool = reads ?: return
         val all = fresh || ticks % slow == 0
         fresh = false
         ticks++
         val answer = if (Lan.wifi == null) null else runCatching {
-            val state = Sonos.state(r)
-            val p = Sonos.position(r)
+            // The play state and the position side by side, and below the slow values too, as the Mac app: each reply's
+            // wait is its own, not added to the others'. A failure of any but the optional ones fails the poll, as before.
+            val asked = pool.submit<String> { Sonos.state(r) }
+            val p = pool.submit<Position> { Sonos.position(r) }.get()
             val got = SystemClock.uptimeMillis() // Before the calls below, which would make the position look older.
+            val state = asked.get()
             if (p.meta != lastMeta) {
                 lastTrack = Sonos.track(p.meta)
                 lastMeta = p.meta
@@ -751,15 +800,20 @@ class Player(private val a: Activity) {
             }
             // With the slow values, whether the speakers were grouped anew, also by the Sonos app or Spotify; only then
             // the household itself (~4 KB), once per change. Neither failing keeps the rest from showing.
-            val now = if (all) runCatching { Sonos.group(r) }.getOrNull() else null
+            // The play mode for Now Playing, the queue check for the Queue: neither failing keeps the rest from showing,
+            // as the TV or line-in may not answer the mode. As the Mac app.
+            val volume = if (all) pool.submit<Int> { Sonos.volume(r) } else null
+            val muted = if (all) pool.submit<Boolean> { Sonos.muted(r) } else null
+            val mode = if (all && full) pool.submit<Mode?> { runCatching { Sonos.mode(r) }.getOrNull() } else null
+            val queuedNow = if (all && media) pool.submit<Boolean?> { runCatching { Sonos.queued(r) }.getOrNull() } else null
+            val grouped = if (all) pool.submit<String?> { runCatching { Sonos.group(r) }.getOrNull() } else null
+            val now = grouped?.get()
             val household = if (now == null || now == grouping) null else runCatching { Upnp.topology(r.host) }.getOrNull()
             Answer(
                 state, p, got, lastTrack,
-                if (all) Sonos.volume(r) else -1, if (all) Sonos.muted(r) else null,
-                // The play mode for Now Playing, the queue check for the Queue: neither failing keeps the rest from
-                // showing, as the TV or line-in may not answer the mode. As the Mac app.
-                if (all && full) runCatching { Sonos.mode(r) }.getOrNull() else null,
-                if (all && media) runCatching { Sonos.queued(r) }.getOrNull() else null,
+                volume?.get() ?: -1, muted?.get(),
+                mode?.get(),
+                queuedNow?.get(),
                 // Its own failure only leaves the line empty; the player still shows the rest.
                 if (full && p.uri.startsWith("x-sonos-htastream:")) runCatching { Sonos.tvFormat(r) }.getOrNull() else null,
                 household, now, lastStation,
@@ -790,81 +844,14 @@ class Player(private val a: Activity) {
         return saveableItem
     }
 
-    /**
-     * The heart for [item], what plays now: hidden for what can't be a favourite; else, for something new, hidden until
-     * the favourites are read, so it never shows the wrong state, then outlined or filled.
-     */
-    private fun heart(r: Room, item: Pair<String, String>?) {
-        val h = heart ?: return
-        if (item == null) {
-            heartKey = ""
-            h.shown = false
-            return
+    /** Filled in green while what plays is a favourite, grey and outlined while it isn't (Heart); here while it shows. */
+    private val drawHeart = {
+        heart?.let { h ->
+            h.shown = Heart.shown && hearts
+            h.setImageResource(if (Heart.on) R.drawable.ic_heart_on else R.drawable.ic_heart)
+            h.contentDescription = a.getString(if (Heart.on) R.string.favorite_remove else R.string.favorite_add)
         }
-        heartItem = item.second
-        if (item.first == heartKey) return
-        val key = item.first
-        heartKey = key
-        h.shown = false
-        later {
-            val s = favorites ?: return@later a.runOnUiThread { if (key == heartKey) heartKey = "" } // Asked again later.
-            val f = runCatching { Sonos.favorites(s) }.getOrNull()
-            a.runOnUiThread {
-                if (key != heartKey) return@runOnUiThread
-                // Unknown: no heart, rather than a wrong one, and the next poll asks again.
-                if (f == null) return@runOnUiThread run { heartKey = "" }
-                heartId = match(f, key)
-                drawHeart()
-                h.shown = true
-            }
-        }
-    }
-
-    /** Saves what plays as a favourite, or removes it: the heart turns at once; the favourites read after confirm it. */
-    private fun toggleHeart() {
-        val key = heartKey.ifEmpty { return }
-        val didl = heartItem ?: return
-        val s = favorites ?: return
-        val id = heartId
-        if (id == "") return // A save on its way: the heart follows once it's in.
-        heartId = if (id == null) "" else null
-        drawHeart()
-        command {
-            try {
-                if (id == null) Sonos.addFavorite(s.control, didl) else Sonos.removeFavorite(s.control, id)
-            } catch (_: Exception) {
-                a.runOnUiThread {
-                    a.toast(a.getString(if (id == null) R.string.favorite_error else R.string.unfavorite_error))
-                    if (key == heartKey) { // As it was, unless the read below says otherwise.
-                        heartId = id
-                        drawHeart()
-                    }
-                }
-            } finally {
-                val f = runCatching { Sonos.favorites(s) }.getOrNull()
-                a.runOnUiThread {
-                    f?.let { onFavorites?.invoke(it) } // Also when what plays changed meanwhile: the save stands.
-                    if (key != heartKey) return@runOnUiThread
-                    if (f != null) {
-                        heartId = match(f, key)
-                        drawHeart()
-                    } else { // Unconfirmed, maybe saved after all: no heart until the next poll has read them again.
-                        heartKey = ""
-                        heart?.shown = false
-                    }
-                }
-            }
-        }
-    }
-
-    private fun match(favorites: List<Entry>, key: String) =
-        favorites.firstOrNull { it.fav?.uri?.isNotEmpty() == true && Favorites.key(it.fav.uri) == key }?.id
-
-    /** Filled in green while what plays is a favourite; grey and outlined while it isn't. */
-    private fun drawHeart() {
-        val on = heartId != null
-        heart?.setImageResource(if (on) R.drawable.ic_heart_on else R.drawable.ic_heart)
-        heart?.contentDescription = a.getString(if (on) R.string.favorite_remove else R.string.favorite_add)
+        Unit
     }
 
     private fun show(play: Boolean) {
@@ -901,6 +888,7 @@ class Player(private val a: Activity) {
         val now = if (on) View.VISIBLE else View.GONE
         if (view.visibility == now) return
         view.visibility = now
+        (view.parent as View).requestApplyInsets() // The bar's inset moves between the screen and the player.
     }
 
     /** Room settings, opened on the room the player follows: the one chosen on the main screen, in its group. */
@@ -956,7 +944,7 @@ class Player(private val a: Activity) {
      * was read, and the volume and mute when those are recent too.
      */
     private fun seed(r: Room) {
-        val l = last?.takeIf { it.room.same(r) } ?: return
+        val l = last[r.id]?.takeIf { it.room.same(r) } ?: return
         val now = SystemClock.uptimeMillis()
         if (now - l.answer.at > SEED_MS) return
         val a = l.answer
@@ -968,14 +956,14 @@ class Player(private val a: Activity) {
 
     /** Keeps [a] for the next screen's player, with the volume, mute and play mode of the last answer that had them. */
     private fun remember(r: Room, a: Answer) {
-        val p = last?.takeIf { a.volume < 0 && it.room.same(r) }
+        val p = last[r.id]?.takeIf { a.volume < 0 && it.room.same(r) }
         val s = p?.answer
         val kept = Answer(
             a.state, a.pos, a.at, a.track, s?.volume ?: a.volume, s?.muted ?: a.muted, s?.mode ?: a.mode,
             s?.queued ?: a.queued, a.tv, null, // Never the household: a seed doesn't regroup.
             station = a.station,
         )
-        last = Last(r, kept, p?.slow ?: a.at)
+        last[r.id] = Last(r, kept, p?.slow ?: a.at)
     }
 
     /** [seeded]: what another screen showed, not this room's answer yet. */
@@ -999,29 +987,13 @@ class Player(private val a: Activity) {
         }
         val st = answer?.station
         val kind = if (answer != null) source(answer.pos.uri, Prefs.model(a, r.id)) else Source.OTHER
-        heart(r, answer?.takeIf { hearts }?.let { saveable(r, it, kind, t, st) })
-        val name = when {
-            answer == null -> a.unreachable(r.name)
-            t != null -> t.title
-            // Sources without metadata, known by their URI: the TV input, and Spotify Connect while paused; a radio
-            // station by its name.
-            answer.pos.uri.startsWith("x-sonos-htastream:") -> a.getString(R.string.tv)
-            answer.pos.uri.startsWith("x-sonos-vli:") && ",spotify:" in answer.pos.uri -> a.getString(R.string.spotify)
-            st != null && st.name.isNotEmpty() -> st.name
-            else -> a.getString(R.string.no_content)
-        }
-        // A radio stream: its station where the artist goes, as the Sonos app has it, and its logo as the cover. Not
-        // twice: between songs a station may send its own name as the song.
-        val artist = t?.artist?.ifEmpty { st?.name?.takeIf { it != t.title } }.orEmpty()
+        Heart.follow(answer?.takeIf { hearts }?.let { saveable(r, it, kind, t, st) }) { later(it) }
+        val named = answer?.let { name(a, r, it.pos.uri, kind, t, st, hosts) } // As the media player names it too.
+        val name = named?.title ?: a.unreachable(r.name)
+        val artist = named?.by.orEmpty()
         // The room leads the mini player's line; Now Playing has it in its own row, under the controls.
         val detail = listOf(if (full) "" else r.name, artist, if (full) t?.album ?: "" else "").filter { it.isNotEmpty() }.joinToString(" · ")
-        val cover = when {
-            // Sonos Radio: the speaker's copy of a track's cover can be another station's logo; its station's is right.
-            kind == Source.SONOS_RADIO -> st?.let { cover(r, it.art, it.uri) }
-            t != null && t.art.isNotEmpty() -> cover(r, t.art, t.uri)
-            st != null -> cover(r, st.art, st.uri)
-            else -> null
-        }
+        val cover = named?.cover
         // Now Playing's line: where it comes from, unless the title says so already, then its format. The TV has no
         // track, but its input format.
         val src = if (full && answer != null) sourceName(kind, answer.pos.uri).takeIf { it != name } ?: "" else ""
@@ -1047,12 +1019,16 @@ class Player(private val a: Activity) {
             }
             covers.show(art, cover, R.drawable.ic_music)
         }
-        if (answer == null) return
+        if (answer == null) {
+            // The room didn't answer, or there's no WiFi: the media player shows it paused, as the service does, so it
+            // goes after its quiet time rather than playing on for good; the service doesn't ask while this screen does.
+            MediaControls.now?.takeIf { it.room.id == r.id && it.playing }?.let { MediaControls.show(a, it.copy(playing = false)) }
+            return
+        }
         val v = answer.volume
         // Not while a change is out, nor from a reading taken before the last one landed: a slow speaker would have
         // the slider jump back, and the next volume button press go from there.
-        val calm = !sending && SystemClock.uptimeMillis() > quiet && answer.at > landed
-        if (v >= 0 && !dragging && calm && v != volume.progress) volume.progress = v
+        if (v >= 0 && !dragging && volumeSender.calm(answer.at) && v != volume.progress) volume.progress = v
         if (level.text.isEmpty() && v >= 0) level.text = v.toString()
         if (v >= 0 && !seeded) heard = true // Read from the room itself: the volume buttons may go from it.
 
@@ -1077,6 +1053,14 @@ class Player(private val a: Activity) {
             }
         }
         onPosition?.invoke(answer.pos, queued, answer.at)
+        // The system's media player follows what this screen reads, rather than asking the room a second time; it
+        // starts once the room plays. Not from a seed: that's what another screen read, maybe a while ago.
+        if (!seeded) MediaControls.show(
+            a, MediaControls.Now(
+                r, name, artist, t?.album.orEmpty(), cover, playing == true, answer.pos.elapsed, answer.pos.duration,
+                answer.at, if (heard) volume.progress else -1, hosts.toSet(),
+            ),
+        )
     }
 
     /**
@@ -1097,19 +1081,6 @@ class Player(private val a: Activity) {
         Source.TV -> "" // The title says TV already.
     }
 
-    /**
-     * The cover's URL when it is on the speaker (often relative, as /getaa?…) or on a known server. One on the internet,
-     * as Spotify's, comes from the speaker too: it fetches the cover of the track's [uri] itself, so the phone never
-     * leaves the local network. Else none.
-     */
-    fun cover(r: Room, ref: String, uri: String = ""): String? {
-        if (ref.isEmpty()) return null
-        val u = runCatching { URL(URL("http://${r.host}/"), ref) }.getOrNull() ?: return null
-        // A server's own: one this screen was told of, or any the main screen found since, as the track playing may be
-        // another server's than the one browsed.
-        if (u.protocol == "http" && (u.host == r.host.substringBefore(':') || u.host in hosts || u.host in servers)) {
-            return u.toString()
-        }
-        return if (uri.isEmpty()) null else Sonos.copy(r.host, uri)
-    }
+    /** A cover's URL as [Player.cover] has it, with the servers this screen was told of. */
+    fun cover(r: Room, ref: String, uri: String = "") = cover(r, ref, uri, hosts)
 }

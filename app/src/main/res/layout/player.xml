@@ -1,13 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- The room's track, Play/Pause and volume, at the foot of every screen. Hidden until there is a room. The Card's
-     20dp padding all round: from the cover at the top and the volume row at the foot, as from the sides. The speaker's
-     box reaches past its row into that padding, so neither is clipped: its touch feedback shows whole. -->
+<!-- The room's track, Play/Pause and volume, docked at the foot of every screen, edge to edge, as most Android apps
+     have their player, in the cards' colour; hidden until there is a room. 20dp above the cover
+     and below the volume row, as a card's padding; 36dp at the sides, so the cover and Play/Pause stand on the cards'
+     content line. Below that, the gesture or navigation bar's inset, which the player takes from the screen while it
+     shows (Player), so its colour runs on under the bar. The speaker's box reaches past its row into the padding, so
+     neither is clipped: its touch feedback shows whole. -->
+<!-- Overdraw: lint takes this for a screen's root, over the theme's background; it's a bar included at a screen's foot. -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
     android:id="@+id/player"
-    style="@style/Card"
-    android:background="@drawable/player_card"
-    android:layout_marginHorizontal="16dp"
-    android:layout_marginBottom="16dp"
+    tools:ignore="Overdraw"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:background="@color/card"
+    android:orientation="vertical"
+    android:paddingHorizontal="36dp"
+    android:paddingVertical="20dp"
     android:clipChildren="false"
     android:clipToPadding="false"
     android:visibility="gone">

@@ -7,6 +7,11 @@
     <uses-permission android:name="android.permission.ACCESS_LOCAL_NETWORK" />
     <!-- To follow WiFi coming and going; granted at install, no prompt. -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- The system's media player while the room plays, also in the background (MediaControls): a service of the media
+         kind, granted at install, no prompt. Its notification is a media session's, which Android 13 and later show
+         without the notification permission. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
 
     <!-- configChanges: rotating or resizing keeps each screen as it is (no new search, no reload, the same place in
          a list); the layouts adapt by themselves, and the tile columns and the Now Playing cover follow in code.
@@ -49,5 +54,10 @@
             android:name=".QueueActivity"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize"
             android:exported="false" />
+
+        <service
+            android:name=".MediaControlsService"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback" />
     </application>
 </manifest>

@@ -1,7 +1,9 @@
 package nl.stouthart.upnpcast
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /** A search's answers: taken only for what was asked, and only from a device that names its own address. */
@@ -29,5 +31,14 @@ class SsdpTest {
         assertNull(Ssdp.parse(answer(Ssdp.SONOS, "https://192.168.8.10:1400/x.xml"), "192.168.8.10", targets)) // Not http.
         assertNull(Ssdp.parse(answer("upnp:rootdevice", "http://192.168.8.10:1400/x.xml"), "192.168.8.10", targets)) // Not asked.
         assertNull(Ssdp.parse("HTTP/1.1 200 OK\r\n\r\n", "192.168.8.10", targets))
+    }
+
+    @Test
+    fun privateAddressesOnly() {
+        assertTrue(isPrivate("192.168.8.2"))
+        assertTrue(isPrivate("10.0.0.1"))
+        assertTrue(isPrivate("172.16.0.1"))
+        assertFalse(isPrivate("8.8.8.8"))
+        assertFalse(isPrivate("172.32.0.1"))
     }
 }

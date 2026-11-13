@@ -605,6 +605,8 @@ class BrowseActivity : Activity() {
         later(sonos) {
             try {
                 Sonos.removeFavorite(server.control, e.id)
+                // The heart, if it's what plays, reads again at the next poll, as in the Mac app.
+                e.fav?.let { f -> runOnUiThread { Heart.forget(Favorites.key(f.uri)) } }
             } catch (x: Exception) {
                 Log.i(TAG, "Remove favorite ${e.id}: $x")
                 runOnUiThread {

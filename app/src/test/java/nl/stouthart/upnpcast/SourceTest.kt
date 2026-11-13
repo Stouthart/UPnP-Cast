@@ -49,9 +49,13 @@ class SourceTest {
     @Test
     fun serviceNumbersAndNames() {
         assertEquals("31", serviceId("x-sonos-http:track%3a6112208%3a5.mp3?sid=31&flags=8232&sn=6")) // Qobuz.
+        assertEquals("254", serviceId("x-sonosapi-stream:s1234?sid=254&flags=8224"))
         assertEquals("9", serviceId("x-sonos-spotify:spotify:track:abc?sid=9&flags=0&sn=2"))
         assertEquals(null, serviceId("x-rincon-mp3radio://stream.example.com/live?sid=31")) // Not a service's link.
+        assertEquals(null, serviceId("http://192.168.8.2:9790/x.flac?sid=31"))
         assertEquals(null, serviceId("x-sonos-http:t.mp4?sid=31x"))
+        assertEquals(null, serviceId("x-sonos-http:a?sid=123456")) // Longer than a service number.
+        assertEquals(null, serviceId("x-sonos-http:a?side=1"))
         val list = "<Services SchemaVersion=\"1\"><Service Id=\"31\" Name=\"Qobuz\" Version=\"1.1\" Uri=\"https://q\">" +
             "<Policy Auth=\"AppLink\"/></Service><Service Name=\"CBC Radio &amp; Music\" Id=\"256\"/></Services>"
         assertEquals(mapOf("31" to "Qobuz", "256" to "CBC Radio & Music"), serviceNames(list))

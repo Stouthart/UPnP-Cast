@@ -1,8 +1,19 @@
-<!-- 2.5 - Copyright (C) 2026 Stouthart. All rights reserved. -->
+<!-- 3.0 - Copyright (C) 2026 Stouthart. All rights reserved. -->
 
 # Release notes
 
-Highlights per version, newest first, with 1.x condensed. 2.5 is the version distributed; the entries below it show how the app got there.
+Highlights per version, newest first, with 1.x condensed. 3.0 is the version distributed; the entries below it show how the app got there.
+
+## 3.0 - November 2026
+
+- **The media player:** while the room plays, also with the app in the background, Android's own media player follows it in Quick Settings and on the lock screen, as for the Sonos app: the cover, the title and artist, the progress to drag, and Play/Pause, Previous and Next, which play or pause by the room's own state, also after it was started or stopped elsewhere. The phone's volume buttons set the room's volume meanwhile, also from another app or with the screen off. It goes once the room has been quiet for 10 minutes, or when swiped away. On a Samsung its icon shows in the status bar too.
+- **The mini player docked:** it runs edge to edge at the foot of every screen, as most Android apps have their player, in the cards' colour and without the line above it, where it was a card of its own. Its colour runs on under the gesture or navigation bar. The cover and Play/Pause stand on the cards' content line, as on Now Playing.
+- **Faster:** the player asks the room for its state, position, volume, mute, play mode, queue and group all at once, rather than one after the other, so Now Playing and the mini player follow a change sooner. Room settings keeps its threads for the next room it opens, rather than starting a dozen each time.
+- **Covers kept:** covers are kept on the phone, up to 64 MB, the ones shown least recently going first, so they show at once the next time, also after a restart. A cover scrolled past before its turn came is no longer fetched, and one kept on the phone brings Now Playing's size along.
+- **Back to a room as it was:** switching back to a room shows its track, cover and progress at once, and its volume, as last seen in the past 15 seconds, while it's asked again; this worked for the last room only.
+- **One heart:** the hearts in the mini player and on Now Playing are one and the same, and a favourite removed in Favorites empties them at once.
+- **App settings closed at start:** the card starts closed each time the app starts, and stays as you leave it while the app runs, where it opened as it was last left.
+- **Sturdier:** a seek or a skip no longer holds back for a moment a volume set elsewhere, as in the Sonos app. Right after the phone joins a WiFi, before its subnet is known, only a private IPv4 address counts as on it. A reply that isn't in UTF-8, as UPnP requires, is refused.
 
 ## 2.5 - November 2026
 

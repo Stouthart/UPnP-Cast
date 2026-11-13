@@ -27,11 +27,11 @@ object Lan {
     @Volatile
     private var subnets: List<LinkAddress> = emptyList()
 
-    /** [ip], a literal, is on the phone's WiFi: in its subnet, or while that isn't known, a private or link-local one. */
+    /** [ip], a literal, is on the phone's WiFi: in its subnet, or while that isn't known, a private one ([isPrivate]). */
     fun local(ip: String): Boolean {
-        val a = runCatching { InetAddress.getByName(ip) }.getOrNull() ?: return false
         val nets = subnets
-        if (nets.isEmpty()) return a.isSiteLocalAddress || a.isLinkLocalAddress
+        if (nets.isEmpty()) return isPrivate(ip)
+        val a = runCatching { InetAddress.getByName(ip) }.getOrNull() ?: return false
         return nets.any { inSubnet(a.address, it.address.address, it.prefixLength) }
     }
 

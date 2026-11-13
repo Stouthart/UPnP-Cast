@@ -6,6 +6,13 @@ import org.junit.Test
 /** A track's format as the rows and Now Playing show it: one unit, spaces inside; its bit depth with a hyphen. */
 class FormatTest {
     @Test
+    fun rates() {
+        assertEquals("44.1 kHz", khz(44100))
+        assertEquals("96 kHz", khz(96000))
+        assertEquals("22.05 kHz", khz(22050))
+    }
+
+    @Test
     fun format() {
         assertEquals("FLAC 44.1 kHz 16-bit", Res("", "http-get:*:audio/x-flac:*", 44100, 16, "").format())
         assertEquals("FLAC 96 kHz 24-bit", Res("", "http-get:*:audio/flac:*", 96000, 24, "").format())

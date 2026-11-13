@@ -46,6 +46,10 @@ private fun icon(b: ByteArray): Bitmap? {
     return if (o.outWidth !in 1..512 || o.outHeight !in 1..512) null else BitmapFactory.decodeByteArray(b, 0, b.size)
 }
 
+// The App settings card left open, while the app runs: closed at each start, as the settings are rarely changed. The
+// same in the Mac app (AppModel.settingsOpen).
+private var settingsOpen = false
+
 /** The opening screen: the Sonos rooms and the media servers on this network, and the settings. */
 class MainActivity : Activity() {
     private val prefs by lazy { getSharedPreferences("devices", MODE_PRIVATE) }
@@ -99,8 +103,8 @@ class MainActivity : Activity() {
     }
 
     /**
-     * The App settings card opens and closes with a tap on its title row, the whole card while closed: closed at first,
-     * then as it was left.
+     * The App settings card opens and closes with a tap on its title row, the whole card while closed: closed at each
+     * start of the app, then as it was left while it runs ([settingsOpen]).
      */
     private fun fold() {
         val header: View = findViewById(R.id.settings_header)
@@ -110,13 +114,13 @@ class MainActivity : Activity() {
             body.shown = o
             header.stateDescription = getString(if (o) R.string.expanded else R.string.collapsed)
         }
-        open(Prefs.open(this))
+        open(settingsOpen)
         chevron.rotation = if (body.shown) 180f else 0f
         val card = body.parent as ViewGroup
         var scroll: LayoutTransition.TransitionListener? = null // An open still to scroll into view.
         header.setOnClickListener {
             val o = !body.shown
-            Prefs.open(this, o)
+            settingsOpen = o
             scroll?.let { card.layoutTransition.removeTransitionListener(it) }
             scroll = null
             open(o)
@@ -318,7 +322,7 @@ class MainActivity : Activity() {
                 // Alongside the library's shares; read again on every search, for one saved elsewhere meanwhile. The
                 // panel stays as it was until then: no jump of the cards below it.
                 val fav = Server(dev.udn, getString(R.string.favorites), dev.host, dev.control, null, favorites = true)
-                Player.favorites = fav // The heart's too, on every screen.
+                Heart.server = fav // The heart's too, on every screen.
                 task {
                     runCatching { Sonos.favorites(fav) }.onSuccess { // All of them, over every page, as the Mac app.
                         runOnUiThread { if (g == gen) showFavorites(fav, it) }

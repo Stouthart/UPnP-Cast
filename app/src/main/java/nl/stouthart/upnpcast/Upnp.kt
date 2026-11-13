@@ -47,11 +47,13 @@ private fun at(b: ByteArray, i: Int, w: ByteArray) = i + w.size <= b.size && w.i
 
 /**
  * Refuses XML with a DTD before it reaches the parser: it comes from the network, and entities defined there could
- * expand until memory runs out. No UPnP device sends one.
+ * expand until memory runs out. No UPnP device sends one. Also XML with a NUL byte: not UTF-8, as UPnP's must be, and
+ * in UTF-16 or UTF-32, which always has one, a DTD wouldn't show to this check.
  */
 fun noDtd(b: ByteArray): ByteArray {
-    for (i in 0 until b.size - 1) {
-        if (b[i] == '<'.code.toByte() && b[i + 1] == '!'.code.toByte() && (at(b, i, DOCTYPE) || at(b, i, ENTITY))) {
+    for (i in b.indices) {
+        if (b[i] == 0.toByte()) throw IOException("XML not in UTF-8")
+        if (b[i] == '<'.code.toByte() && i + 1 < b.size && b[i + 1] == '!'.code.toByte() && (at(b, i, DOCTYPE) || at(b, i, ENTITY))) {
             throw IOException("XML with a DTD")
         }
     }
@@ -79,6 +81,13 @@ fun literal(host: String): Boolean {
     }
     val p = host.split('.')
     return p.size == 4 && p.all { it.length in 1..3 && it.all { c -> c in '0'..'9' } && it.toInt() <= 255 }
+}
+
+/** An address in the private ranges a home network uses: where the speakers and servers live. */
+fun isPrivate(ip: String): Boolean {
+    val p = ip.split('.').mapNotNull { it.toIntOrNull() }
+    if (p.size != 4) return false
+    return p[0] == 10 || (p[0] == 172 && p[1] in 16..31) || (p[0] == 192 && p[1] == 168) || (p[0] == 169 && p[1] == 254)
 }
 
 /** [ip] lies within [net]/[prefix]; both 4 bytes or both 16. */
@@ -259,9 +268,9 @@ object Upnp {
     }
 
     /** "ip:port" names a Sonos player on the phone's WiFi. */
-    private fun player(host: String): Boolean {
+    private fun player(host: String, local: (String) -> Boolean): Boolean {
         val ip = host.substringBeforeLast(':')
-        return host.substringAfterLast(':') == SONOS_PORT.toString() && literal(ip) && Lan.local(ip)
+        return host.substringAfterLast(':') == SONOS_PORT.toString() && literal(ip) && local(ip)
     }
 
     /**
@@ -281,7 +290,12 @@ object Upnp {
     /** The household, from any one player at [host]. */
     fun topology(host: String): Topology {
         val reply = Http.soap("http://$host/ZoneGroupTopology/Control", "ZoneGroupTopology", "GetZoneGroupState")
-        val state = arg(reply, "ZoneGroupState") ?: return Topology(emptyList(), emptyList(), emptyMap())
+        return topology(state = arg(reply, "ZoneGroupState") ?: "")
+    }
+
+    /** The household from a ZoneGroupState document. Only players at Sonos's port on an address [local] takes count. */
+    fun topology(state: String, local: (String) -> Boolean = Lan::local): Topology {
+        if (state.isEmpty()) return Topology(emptyList(), emptyList(), emptyMap())
         val p = Http.parsers.newPullParser().apply { setInput(StringReader(noDtd(state))) }
         val groups = ArrayList<Room>()
         val rooms = ArrayList<Room>()
@@ -314,7 +328,7 @@ object Upnp {
                 // this WiFi, at Sonos's port: the topology is the one list the SSDP check doesn't cover, and the
                 // players in it are asked every few seconds.
                 "ZoneGroupMember" -> if (p.attr("Invisible") != "1") {
-                    val h = hostOf(p.attr("Location"))?.takeIf { player(it) } ?: continue
+                    val h = hostOf(p.attr("Location"))?.takeIf { player(it, local) } ?: continue
                     val m = Member(p.attr("UUID"), p.attr("ZoneName"), h, hasSub(p.attr("HTSatChanMapSet") + ";" + p.attr("ChannelMapSet")))
                     members += m
                     if (m.id == coordinator) {

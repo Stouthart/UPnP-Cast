@@ -17,7 +17,6 @@
     <color name="ripple">#33FFFFFF</color> <!-- On accent buttons. -->
     <color name="warning">#FFAD0707</color>
     <color name="success">#FF2E7D32</color>
-    <color name="player_edge">#FFBCBCBE</color> <!-- The mini player's edge: text2 at 40% on the card, set apart from the cards above. -->
     <color name="ring">#FFBCBCBE</color> <!-- The mini player's progress ring, on Play/Pause's edge: the grey of its own edge. -->
     <color name="icon_bg">#FF232426</color> <!-- The launcher icon's dark grey, in both themes. -->
 </resources>

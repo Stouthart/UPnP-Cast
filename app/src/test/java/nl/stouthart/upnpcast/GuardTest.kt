@@ -72,6 +72,8 @@ class GuardTest {
         assertEquals(0, seconds("596523:14:08")) // One more: no wrap to a negative length.
         assertEquals(0, seconds("596524:00:00"))
         assertEquals(0, seconds("99999999999:00:00")) // Not even a number of hours an Int holds.
+        assertEquals("5:40", clock(340))
+        assertEquals("1:02:03", clock(3723))
     }
 
     @Test

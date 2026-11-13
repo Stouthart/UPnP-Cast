@@ -43,6 +43,11 @@ class SoapTest {
         // The service's name with no version, or one that isn't a number.
         no(envelope("<u:PlayResponse xmlns:u=\"urn:schemas-upnp-org:service:AVTransport:\"/>"), "Play")
         no(envelope("<u:PlayResponse xmlns:u=\"urn:schemas-upnp-org:service:AVTransport:nonsense\"/>"), "Play")
+        no(envelope("<u:PlayResponse xmlns:u=\"urn:example:AVTransport:1\"/>"), "Play") // Not a UPnP service's.
+        // The Body in another namespace; a second Body, holding a fault.
+        no("<s:Envelope xmlns:s=\"$soap\"><b:Body xmlns:b=\"urn:other\"><u:PlayResponse $avt/></b:Body></s:Envelope>".toByteArray(), "Play")
+        no(("<s:Envelope xmlns:s=\"$soap\"><s:Body><u:PlayResponse $avt/></s:Body>" +
+            "<s:Body><s:Fault><faultcode>s:Client</faultcode></s:Fault></s:Body></s:Envelope>").toByteArray(), "Play")
     }
 
     @Test
@@ -65,6 +70,13 @@ class SoapTest {
         no(envelope("<u:PlayResponse $avt/>") + envelope("<u:PlayResponse $avt/>"), "Play") // Two documents.
         no(envelope("<u:PlayResponse $avt/>", "<!DOCTYPE s:Envelope [<!ENTITY x \"y\">]>"), "Play") // A DTD.
         no("text<s:Envelope xmlns:s=\"$soap\"><s:Body><u:PlayResponse $avt/></s:Body></s:Envelope>".toByteArray(), "Play")
+        // Not UTF-8, as UPnP's XML must be: in UTF-16 or UTF-32, with a DTD or without.
+        val play = String(envelope("<u:PlayResponse $avt/>"))
+        val dtd = String(envelope("<u:PlayResponse $avt/>", "<!DOCTYPE s:Envelope [<!ENTITY x \"y\">]>"))
+        no("\uFEFF$play".toByteArray(Charsets.UTF_16LE), "Play")
+        no("\uFEFF$dtd".toByteArray(Charsets.UTF_16LE), "Play")
+        no(dtd.toByteArray(Charsets.UTF_16BE), "Play")
+        no(dtd.toByteArray(charset("UTF-32BE")), "Play")
     }
 
     @Test

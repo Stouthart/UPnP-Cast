@@ -58,6 +58,7 @@ class RoomActivity : Activity() {
     private val subKeys = arrayOf("SubEnable", "SubGain", "SubPolarity")
 
     private val io = Executors.newSingleThreadExecutor() // The changes, one after the other, and the reads' start.
+    private val reads = Executors.newCachedThreadPool() // A room's settings, all at once, as the Mac app; one pool for all.
     private val wanted = ConcurrentHashMap<String, Int>() // Per room and setting, the latest value still to send.
     private lateinit var rooms: List<Room>
     private val rows = ArrayList<View>() // The rooms' rows, in order; the settings go between two of them.
@@ -226,16 +227,13 @@ class RoomActivity : Activity() {
         val made = edits
         later(io) {
             if (g != gen) return@later // Overtaken while a change went out: not a request for it.
-            val pool = Executors.newFixedThreadPool(asked.size) // All at once, as the Mac app: a dozen small reads.
             val got: HashMap<String, Int?>? = try {
                 val calls = ArrayList<Callable<Int?>>(asked.size)
                 for (k in asked) calls += Callable { if (g == gen) Sonos.setting(r.own, k) else null }
-                val answers = pool.invokeAll(calls)
+                val answers = reads.invokeAll(calls)
                 HashMap<String, Int?>().apply { for (n in asked.indices) put(asked[n], answers[n].get()) }
             } catch (e: Exception) {
                 null // A failure other than a setting the player hasn't got: the room itself didn't answer.
-            } finally {
-                pool.shutdownNow()
             }
             // Not after a change made meanwhile: it could still hold the value from before. Only ever a read again:
             // the controls show, and can change, only once the first read has filled them.
@@ -455,6 +453,7 @@ class RoomActivity : Activity() {
     override fun onDestroy() {
         gen++
         io.shutdown() // A change still out goes through; nothing new starts.
+        reads.shutdownNow()
         super.onDestroy()
     }
 }

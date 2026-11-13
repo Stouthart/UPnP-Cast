@@ -79,7 +79,7 @@ object Http {
      */
     internal fun check(reply: ByteArray, action: String, service: String?, names: Array<out String>, out: Array<String?>): Boolean = runCatching {
         val p = parsers.newPullParser()
-        p.setInput(reply.inputStream(), null)
+        p.setInput(noDtd(reply).inputStream(), null)
         val envelope = "http://schemas.xmlsoap.org/soap/envelope/"
         val type = service?.let { "urn:schemas-upnp-org:service:$it:" }
         var roots = 0

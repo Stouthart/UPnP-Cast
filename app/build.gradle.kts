@@ -14,8 +14,8 @@ android {
         applicationId = "nl.stouthart.upnpcast"
         minSdk = 34 // Android 14; tested on 16 (RedMagic Astra) and 17 (S25 Edge).
         targetSdk = 37
-        versionCode = 14 // Keeps counting up: the phones carried the internal 0.1 builds as 1.
-        versionName = "2.5"
+        versionCode = 15 // Keeps counting up: the phones carried the internal 0.1 builds as 1.
+        versionName = "3.0"
     }
 
     // The release key: its keystore and passwords in keystore.properties beside the project, kept out of git. Without
